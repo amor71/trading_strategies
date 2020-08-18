@@ -1,3 +1,3 @@
 # mystrategies
 
-This repository contains my trading liualgotrader(https://github.com/amor71/LiuAlgoTrader) strategies
+This repository contains my trading https://github.com/amor71/LiuAlgoTrader strategies
