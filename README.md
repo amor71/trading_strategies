@@ -1,3 +1,3 @@
-# myStrategies
+# LiuStrategies
 
-This repository contains my trading https://github.com/amor71/LiuAlgoTrader strategies
+This repository contains my WIP strategies for trading with https://github.com/amor71/LiuAlgoTrader , some of them may end up in the "official" Liu releases, some may not.
