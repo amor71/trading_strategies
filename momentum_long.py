@@ -4,11 +4,6 @@ from typing import Dict, List, Tuple
 import alpaca_trade_api as tradeapi
 import numpy as np
 import talib
-from pandas import DataFrame as df
-from pandas import Series
-from pandas import Timestamp as ts
-from talib import BBANDS, MACD, RSI
-
 from liualgotrader.common import config
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators, buy_time,
@@ -17,8 +12,12 @@ from liualgotrader.common.trading_data import (buy_indicators, buy_time,
                                                latest_scalp_basis, open_orders,
                                                sell_indicators, stop_prices,
                                                target_prices)
-from liualgotrader.fincalcs.support_resistance import (find_stop)
+from liualgotrader.fincalcs.support_resistance import find_stop
 from liualgotrader.strategies.base import Strategy
+from pandas import DataFrame as df
+from pandas import Series
+from pandas import Timestamp as ts
+from talib import BBANDS, MACD, RSI
 
 
 class MomentumLongV2(Strategy):
@@ -110,10 +109,10 @@ class MomentumLongV2(Strategy):
                 )
                 close_5m = (
                     minute_history["close"]
-                        .dropna()
-                        .between_time("9:30", "16:00")
-                        .resample("5min")
-                        .last()
+                    .dropna()
+                    .between_time("9:30", "16:00")
+                    .resample("5min")
+                    .last()
                 ).dropna()
 
                 macds = MACD(close)
@@ -121,16 +120,21 @@ class MomentumLongV2(Strategy):
 
                 macd = macds[0]
                 macd_signal = macds[1]
-
+                macd_hist = macds[2]
                 macd_trending = macd[-3] < macd[-2] < macd[-1]
-                macd_above_signal = macd[-1] > macd_signal[-1]
+                macd_above_signal = macd[-1] > macd_signal[-1] * 1.1
+                macd_hist_trending = (
+                    macd_hist[-3] < macd_hist[-2] < macd_hist[-1]
+                )
 
-                if macd[-1] > 0 and macd_trending and macd_above_signal:
+                if (
+                    macd[-1] > 0
+                    and macd_trending
+                    and macd_above_signal
+                    and macd_hist_trending
+                ):
                     macd2 = MACD(close, 40, 60)[0]
-                    if (
-                        macd2[-1] >= 0
-                        and np.diff(macd2)[-1] >= 0
-                    ):
+                    if macd2[-1] >= 0 and np.diff(macd2)[-1] >= 0:
                         if debug:
                             tlog(
                                 f"[{self.name}][{now}] slow macd confirmed trend"
@@ -271,7 +275,7 @@ class MomentumLongV2(Strategy):
                 < round(macd[-2], round_factor)
             )
 
-            scalp = (movement > 0.02 or data.vwap > scalp_threshold)
+            scalp = movement > 0.02 or data.vwap > scalp_threshold
             below_cost_base = data.vwap < latest_cost_basis[symbol]
 
             rsi_limit = 79 if not morning_rush else 85
@@ -286,7 +290,8 @@ class MomentumLongV2(Strategy):
                 below_cost_base
                 and round(macd_val, 2) < 0
                 and rsi[-1] < rsi[-2]
-                and round(macd[-1], round_factor) < round(macd[-2], round_factor)
+                and round(macd[-1], round_factor)
+                < round(macd[-2], round_factor)
                 and data.vwap < 0.95 * data.average
             ):
                 to_sell = True
@@ -310,7 +315,6 @@ class MomentumLongV2(Strategy):
                 to_sell = True
                 sell_reasons.append("scale-out")
 
-
             if to_sell:
                 sell_indicators[symbol] = {
                     "rsi": rsi[-3:].tolist(),
@@ -322,7 +326,6 @@ class MomentumLongV2(Strategy):
                     "reasons": " AND ".join(
                         [str(elem) for elem in sell_reasons]
                     ),
-
                 }
 
                 if not partial_sell:
