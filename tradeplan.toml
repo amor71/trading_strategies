@@ -39,7 +39,7 @@
 
         # trading schedules block, trades many have
         # several windows within the same day
-        [[strategies.MomentumLongV2.schedule]]
+        [[strategies.MomentumLong.schedule]]
             start = 15
             duration = 60
 
