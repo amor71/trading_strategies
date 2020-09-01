@@ -32,8 +32,8 @@
 # trading strategies, can have several *strategy* blocks
 [[strategies]]
     # strategy class name, must implement Strategy class
-    [strategies.MomentumLongV2]
-        filename = "momentum_long.py"
+    [strategies.MomentumLong]
+        # filename = "momentum_long.py"
 
         # check_patterns = true
 
