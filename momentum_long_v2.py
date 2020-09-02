@@ -237,11 +237,15 @@ class MomentumLongV2(Strategy):
                 )
                 return False, {}
 
-            macds = MACD(
-                minute_history["close"].dropna().between_time("9:30", "16:00"),
-                13,
-                21,
+            serie = (
+                minute_history["close"].dropna().between_time("9:30", "16:00")
             )
+
+            if data.vwap:
+                serie[-1] = data.vwap
+
+            macds = MACD(serie, 13, 21,)
+
             macd = macds[0]
             macd_signal = macds[1]
             rsi = RSI(
