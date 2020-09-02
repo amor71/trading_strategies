@@ -131,6 +131,7 @@ class MomentumLongV2(Strategy):
                     and macd_trending
                     and macd_above_signal
                     and macd_hist_trending
+                    and data.vwap > data.open > prev_min.close
                 ):
                     macd2 = MACD(close, 40, 60)[0]
                     if macd2[-1] >= 0 and np.diff(macd2)[-1] >= 0:
