@@ -244,7 +244,11 @@ class MomentumLongV2(Strategy):
             if data.vwap:
                 serie[-1] = data.vwap
 
-            macds = MACD(serie, 13, 21,)
+            macds = MACD(
+                serie,
+                13,
+                21,
+            )
 
             macd = macds[0]
             macd_signal = macds[1]
@@ -270,13 +274,16 @@ class MomentumLongV2(Strategy):
                 macd_signal_val, round_factor
             )
             bail_out = (
-                latest_scalp_basis[symbol] > latest_cost_basis[symbol]
+                (
+                    latest_scalp_basis[symbol] > latest_cost_basis[symbol]
+                    or movement > 0.02
+                )
                 and macd_below_signal
                 and round(macd[-1], round_factor)
                 < round(macd[-2], round_factor)
             )
 
-            scalp = movement > 0.02 or data.vwap > scalp_threshold
+            scalp = movement > 0.04 or data.vwap > scalp_threshold
             below_cost_base = data.vwap < latest_cost_basis[symbol]
 
             rsi_limit = 79 if not morning_rush else 85
