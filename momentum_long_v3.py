@@ -79,6 +79,7 @@ class MomentumLongV3(Strategy):
         if (
             await super().is_buy_time(now)
             and not position
+            and not open_orders.get(symbol, None)
             and not await self.should_cool_down(symbol, now)
         ):
             # Check for buy signals
