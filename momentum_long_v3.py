@@ -62,6 +62,7 @@ class MomentumLongV3(Strategy):
     async def run(
         self,
         symbol: str,
+        shortable: bool,
         position: int,
         minute_history: df,
         now: datetime,

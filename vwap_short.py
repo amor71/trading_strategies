@@ -52,20 +52,10 @@ class VWAPShort(Strategy):
         await super().create()
         tlog(f"strategy {self.name} created")
 
-    async def is_not_shortable(self, symbol: str) -> bool:
-        asset = self.trading_api.get_asset(symbol)
-        return (
-            True
-            if asset.tradable is False
-            or asset.shortable is False
-            or asset.status == "inactive"
-            or asset.easy_to_borrow is False
-            else False
-        )
-
     async def run(
         self,
         symbol: str,
+        shortable: bool,
         position: int,
         minute_history: df,
         now: datetime,
@@ -74,7 +64,7 @@ class VWAPShort(Strategy):
         debug: bool = False,
         backtesting: bool = False,
     ) -> Tuple[bool, Dict]:
-        if not backtesting and await self.is_not_shortable(symbol):
+        if not shortable:
             return False, {}
 
         data = minute_history.iloc[-1]
@@ -137,7 +127,10 @@ class VWAPShort(Strategy):
                 ],
                 axis=1,
             )
-            add_daily_vwap(df)
+            if not add_daily_vwap(df):
+                tlog(f"[{now}]{symbol} failed in add_daily_vwap")
+                return False, {}
+
             vwap_series = df["average"]
 
             if (
