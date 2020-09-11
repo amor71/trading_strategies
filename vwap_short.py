@@ -229,8 +229,6 @@ class VWAPShort(Strategy):
                 .resample("5min")
                 .last()
             ).dropna()
-
-            print(close[-5:])
             to_sell: bool = False
             reason: str = ""
 

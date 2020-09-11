@@ -20,6 +20,7 @@ from talib import BBANDS, MACD, RSI
 
 class MomentumLongV3(Strategy):
     name = "momentum_long"
+    whipsawed: Dict = {}
 
     def __init__(
         self,
@@ -247,12 +248,13 @@ class MomentumLongV3(Strategy):
             and position > 0
             and symbol in latest_cost_basis
             and last_used_strategy[symbol].name == self.name
+            and not open_orders.get(symbol)
         ):
-            if open_orders.get(symbol) is not None:
-                tlog(
-                    f"momentum_long: open order for {symbol} exists, skipping"
-                )
-                return False, {}
+            if (
+                not self.whipsawed.get(symbol, None)
+                and data.close < latest_cost_basis[symbol] * 0.98
+            ):
+                self.whipsawed[symbol] = True
 
             serie = (
                 minute_history["close"].dropna().between_time("9:30", "16:00")
@@ -299,7 +301,12 @@ class MomentumLongV3(Strategy):
                 and round(macd[-1], round_factor)
                 < round(macd[-2], round_factor)
             )
-
+            bail_on_whiplash = (
+                data.close > latest_cost_basis[symbol]
+                and macd_below_signal
+                and round(macd[-1], round_factor)
+                < round(macd[-2], round_factor)
+            )
             scalp = movement > 0.04 or data.vwap > scalp_threshold
             below_cost_base = data.vwap < latest_cost_basis[symbol]
 
@@ -339,6 +346,9 @@ class MomentumLongV3(Strategy):
                 partial_sell = True
                 to_sell = True
                 sell_reasons.append("scale-out")
+            elif bail_on_whiplash:
+                to_sell = True
+                sell_reasons.append("bail post whiplash")
 
             if to_sell:
                 sell_indicators[symbol] = {
