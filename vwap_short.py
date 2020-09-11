@@ -205,7 +205,7 @@ class VWAPShort(Strategy):
                     True,
                     {
                         "side": "sell",
-                        "qty": str(shares_to_buy),
+                        "qty": str(-shares_to_buy),
                         "type": "market",
                     },
                 )
