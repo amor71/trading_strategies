@@ -78,9 +78,15 @@ class VWAPShort(Strategy):
             and not open_orders.get(symbol, None)
         ):
             day_start = ts(config.market_open)
-            day_start_index = minute_history["close"].index.get_loc(
-                day_start, method="nearest"
-            )
+
+            try:
+                day_start_index = minute_history["close"].index.get_loc(
+                    day_start, method="nearest"
+                )
+            except ValueError:
+                tlog(f"{self.name}[{now}] can't load index for {day_start}")
+                return False, {}
+
             close = (
                 minute_history["close"][day_start_index:-1]
                 .dropna()
