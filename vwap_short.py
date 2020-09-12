@@ -43,10 +43,10 @@ class VWAPShort(Strategy):
         )
 
     async def buy_callback(self, symbol: str, price: float, qty: int) -> None:
-        latest_cost_basis[symbol] = price
+        pass
 
     async def sell_callback(self, symbol: str, price: float, qty: int) -> None:
-        pass
+        latest_cost_basis[symbol] = price
 
     async def create(self) -> None:
         await super().create()
@@ -213,7 +213,6 @@ class VWAPShort(Strategy):
         if (
             await super().is_sell_time(now)
             and position
-            # and symbol in latest_cost_basis
             and last_used_strategy[symbol].name == self.name
             and not open_orders.get(symbol)
         ):
