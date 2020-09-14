@@ -83,8 +83,10 @@ class VWAPShort(Strategy):
                 day_start_index = minute_history["close"].index.get_loc(
                     day_start, method="nearest"
                 )
-            except ValueError:
-                tlog(f"{self.name}[{now}] can't load index for {day_start}")
+            except Exception as e:
+                tlog(
+                    f"[ERROR]{self.name}[{now}] can't load index for {day_start} w/ {e}"
+                )
                 return False, {}
 
             close = (
