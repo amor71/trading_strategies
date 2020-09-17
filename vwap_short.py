@@ -85,7 +85,7 @@ class VWAPShort(Strategy):
                 )
             except Exception as e:
                 tlog(
-                    f"[ERROR]{self.name}[{now}] can't load index for {day_start} w/ {e}"
+                    f"[ERROR]{self.name}[{now}]{symbol} can't load index for {day_start} w/ {e}"
                 )
                 return False, {}
 

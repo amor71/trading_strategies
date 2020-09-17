@@ -5,7 +5,10 @@
 
 # ticket scanners, may have several
 # scanners during the day
-[[scanners]]
+[scanners]
+    [scanners.GoldDigger]
+    filename = "scanners/gold_digger.py"
+
     [scanners.momentum]
         # check documentation for supported providers
         provider = 'polygon'
@@ -30,7 +33,7 @@
         # max_symbols = 440
 
 # trading strategies, can have several *strategy* blocks
-[[strategies]]
+[strategies]
     # strategy class name, must implement Strategy class
     [strategies.MomentumLongV3]
         filename = "momentum_long_v3.py"
