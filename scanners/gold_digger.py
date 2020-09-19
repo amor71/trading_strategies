@@ -12,14 +12,18 @@ class GoldDigger(Scanner):
     golden_list = ["JNUG", "JDST"]
 
     def __init__(
-        self, recurrence: Optional[timedelta], data_api: tradeapi, **args
+        self,
+        data_api: tradeapi,
+        recurrence: Optional[timedelta] = None,
+        target_strategy_name: str = None,
     ):
         super().__init__(
             name=self.name,
             recurrence=recurrence,
+            target_strategy_name=target_strategy_name,
             data_api=data_api,
         )
 
-    def run(self) -> List[str]:
-        tlog(f"return {self.golden_list}")
+    async def run(self) -> List[str]:
+        tlog(f"{self.name} picked {self.golden_list}")
         return self.golden_list

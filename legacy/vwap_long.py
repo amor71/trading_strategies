@@ -3,25 +3,26 @@ from typing import Dict, List, Tuple
 
 import alpaca_trade_api as tradeapi
 import talib
+from deprecated import deprecated
 from google.cloud import error_reporting
+from liualgotrader.common import config
+from liualgotrader.common.tlog import tlog
+from liualgotrader.common.trading_data import (buy_indicators,
+                                               last_used_strategy,
+                                               latest_cost_basis, open_orders,
+                                               sell_indicators, stop_prices,
+                                               target_prices)
+from liualgotrader.fincalcs.support_resistance import find_stop
+from liualgotrader.fincalcs.vwap import add_daily_vwap
+from liualgotrader.strategies.base import Strategy
 from pandas import DataFrame as df
 from pandas import Series
 from pandas import Timestamp as ts
 from pandas import concat
 from tabulate import tabulate
 
-from common.tlog import tlog
-from common.trading_data import (buy_indicators, last_used_strategy,
-                                 latest_cost_basis, open_orders,
-                                 sell_indicators, stop_prices, target_prices)
-from fincalcs.candle_patterns import doji
-from fincalcs.support_resistance import find_stop
-from liualgotrader.fincalcs.vwap import add_daily_vwap
 
-from ..common import config
-from .base import Strategy
-
-
+@deprecated()
 class VWAPLong(Strategy):
     name = "vwap_long"
 
@@ -68,9 +69,7 @@ class VWAPLong(Strategy):
             lbound = config.market_open
             ubound = lbound + timedelta(minutes=15)
             try:
-                high_15m = minute_history[lbound:ubound][  # type: ignore
-                    "high"
-                ].max()
+                high_15m = minute_history[lbound:ubound]["high"].max()  # type: ignore
 
                 if data.vwap < high_15m:
                     return False, {}

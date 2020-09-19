@@ -88,9 +88,7 @@ class MomentumLongV3(Strategy):
             lbound = config.market_open.replace(second=0, microsecond=0)
             ubound = lbound + timedelta(minutes=15)
             try:
-                high_15m = minute_history[lbound:ubound][  # type: ignore
-                    "high"
-                ].max()
+                high_15m = minute_history[lbound:ubound]["high"].max()  # type: ignore
             except Exception as e:
                 tlog(f"{symbol}[{now}] failed to aggregate {ubound}:{lbound}")
                 return False, {}
@@ -264,11 +262,7 @@ class MomentumLongV3(Strategy):
             if data.vwap:
                 serie[-1] = data.vwap
 
-            macds = MACD(
-                serie,
-                13,
-                21,
-            )
+            macds = MACD(serie, 13, 21,)
 
             macd = macds[0]
             macd_signal = macds[1]

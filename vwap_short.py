@@ -253,11 +253,7 @@ class VWAPShort(Strategy):
                 )
                 return (
                     True,
-                    {
-                        "side": "buy",
-                        "qty": str(-position),
-                        "type": "market",
-                    },
+                    {"side": "buy", "qty": str(-position), "type": "market",},
                 )
 
         return False, {}

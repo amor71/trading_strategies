@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple
 import alpaca_trade_api as tradeapi
 import numpy as np
 import talib
+from deprecated import deprecated
 from liualgotrader.common import config
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators, buy_time,
@@ -18,6 +19,7 @@ from pandas import DataFrame as df
 from talib import BBANDS, MACD, RSI
 
 
+@deprecated()
 class MomentumLongV2(Strategy):
     name = "momentum_long"
 
@@ -88,9 +90,7 @@ class MomentumLongV2(Strategy):
             if debug:
                 tlog(f"15 schedule {lbound}/{ubound}")
             try:
-                high_15m = minute_history[lbound:ubound][  # type: ignore
-                    "high"
-                ].max()
+                high_15m = minute_history[lbound:ubound]["high"].max()  # type: ignore
             except Exception as e:
                 tlog(
                     f"[{self.name}] error aggregation {e} - maybe should use nearest?"
@@ -244,11 +244,7 @@ class MomentumLongV2(Strategy):
             if data.vwap:
                 serie[-1] = data.vwap
 
-            macds = MACD(
-                serie,
-                13,
-                21,
-            )
+            macds = MACD(serie, 13, 21,)
 
             macd = macds[0]
             macd_signal = macds[1]

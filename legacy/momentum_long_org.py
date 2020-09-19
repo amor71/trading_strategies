@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple
 import alpaca_trade_api as tradeapi
 import numpy as np
 import talib
+from deprecated import deprecated
 from liualgotrader.common import config
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators, buy_time,
@@ -27,6 +28,7 @@ from talib import BBANDS, MACD, RSI
 from .base import Strategy, StrategyType
 
 
+@deprecated()
 class MomentumLong(Strategy):
     name = "momentum_long"
 
@@ -97,9 +99,7 @@ class MomentumLong(Strategy):
             if debug:
                 tlog(f"15 schedule {lbound}/{ubound}")
             try:
-                high_15m = minute_history[lbound:ubound][  # type: ignore
-                    "high"
-                ].max()
+                high_15m = minute_history[lbound:ubound]["high"].max()  # type: ignore
                 if debug:
                     tlog(f"{minute_history[lbound:ubound]}")  # type: ignore
             except Exception as e:

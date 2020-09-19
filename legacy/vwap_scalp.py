@@ -1,34 +1,34 @@
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 import alpaca_trade_api as tradeapi
-import pandas as pd
-from google.cloud import error_reporting
+from deprecated import deprecated
+from liualgotrader.common import config
+from liualgotrader.common.tlog import tlog
+from liualgotrader.common.trading_data import (buy_indicators, down_cross,
+                                               last_used_strategy,
+                                               latest_cost_basis, open_orders,
+                                               sell_indicators, stop_prices,
+                                               target_prices)
+from liualgotrader.fincalcs.support_resistance import find_stop
+from liualgotrader.fincalcs.vwap import add_daily_vwap
+from liualgotrader.strategies.base import Strategy, StrategyType
 from pandas import DataFrame as df
-from pandas import Series
 from pandas import Timestamp as ts
 from pandas import concat
 from tabulate import tabulate
 
-from common.tlog import tlog
-from common.trading_data import (buy_indicators, down_cross,
-                                 last_used_strategy, latest_cost_basis,
-                                 open_orders, sell_indicators, stop_prices,
-                                 target_prices)
-from fincalcs.candle_patterns import doji
-from fincalcs.support_resistance import find_stop
-from liualgotrader.fincalcs.vwap import add_daily_vwap
 
-from ..common import config
-from .base import Strategy
-
-
+@deprecated()
 class VWAPScalp(Strategy):
     name = "vwap_scalp"
 
     def __init__(self, batch_id: str, ref_run_id: int = None):
         super().__init__(
-            name=self.name, batch_id=batch_id, ref_run_id=ref_run_id
+            name=self.name,
+            batch_id=batch_id,
+            type=StrategyType.DAY_TRADE,
+            ref_run_id=ref_run_id,
         )
 
     async def buy_callback(self, symbol: str, price: float, qty: int) -> None:
