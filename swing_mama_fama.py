@@ -1,0 +1,146 @@
+import asyncio
+from datetime import datetime
+from typing import Dict, List, Tuple
+
+import alpaca_trade_api as tradeapi
+from liualgotrader.common import config
+from liualgotrader.common.tlog import tlog
+from liualgotrader.common.trading_data import (buy_indicators,
+                                               last_used_strategy,
+                                               latest_cost_basis, open_orders,
+                                               sell_indicators, stop_prices,
+                                               target_prices)
+from liualgotrader.strategies.base import Strategy, StrategyType
+from pandas import DataFrame as df
+from talib import MAMA
+
+
+class SwingMamaFama(Strategy):
+    name = "SwingMamaFama"
+    was_above_vwap: Dict = {}
+
+    def __init__(
+        self,
+        batch_id: str,
+        schedule: List[Dict],
+        ref_run_id: int = None,
+        check_patterns: bool = False,
+    ):
+        self.check_patterns = check_patterns
+        super().__init__(
+            name=self.name,
+            type=StrategyType.SWING,
+            batch_id=batch_id,
+            ref_run_id=ref_run_id,
+            schedule=schedule,
+        )
+
+    async def buy_callback(self, symbol: str, price: float, qty: int) -> None:
+        latest_cost_basis[symbol] = price
+
+    async def sell_callback(self, symbol: str, price: float, qty: int) -> None:
+        pass
+
+    async def create(self) -> None:
+        await super().create()
+        tlog(f"strategy {self.name} created")
+
+    async def is_buy_time(self, now: datetime):
+        return True
+
+    async def is_sell_time(self, now: datetime):
+        return True
+
+    async def run(
+        self,
+        symbol: str,
+        shortable: bool,
+        position: int,
+        minute_history: df,
+        now: datetime,
+        portfolio_value: float = None,
+        trading_api: tradeapi = None,
+        debug: bool = False,
+        backtesting: bool = False,
+    ) -> Tuple[bool, Dict]:
+        data = minute_history.iloc[-1]
+        fama, mama = MAMA(minute_history["close"])
+
+        if fama[-1] > mama[-1]:
+            stop_price = 0.0
+            target_price = 0.0
+
+            stop_prices[symbol] = stop_price
+            target_prices[symbol] = target_price
+
+            if portfolio_value is None:
+                if trading_api:
+                    retry = 3
+                    while retry > 0:
+                        try:
+                            portfolio_value = float(
+                                trading_api.get_account().portfolio_value
+                            )
+                            break
+                        except ConnectionError as e:
+                            tlog(
+                                f"[{symbol}][{now}[Error] get_account() failed w/ {e}, retrying {retry} more times"
+                            )
+                            await asyncio.sleep(0)
+                            retry -= 1
+
+                    if not portfolio_value:
+                        tlog(
+                            "f[{symbol}][{now}[Error] failed to get portfolio_value"
+                        )
+                        return False, {}
+                else:
+                    raise Exception(
+                        f"{self.name}: both portfolio_value and trading_api can't be None"
+                    )
+
+            shares_to_buy = (
+                portfolio_value
+                * config.risk
+                // (data.close - stop_prices[symbol])
+            )
+            if not shares_to_buy:
+                shares_to_buy = 1
+
+            buy_indicators[symbol] = {
+                "mama": mama[-5:].tolist(),
+                "fama": fama[-5:].tolist(),
+            }
+
+            tlog(
+                f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at market target {target_prices[symbol]} stop {stop_prices[symbol]}"
+            )
+
+            return (
+                True,
+                {"side": "buy", "qty": str(shares_to_buy), "type": "market",},
+            )
+
+        if (
+            await self.is_sell_time(now)
+            and position
+            and last_used_strategy[symbol].name == self.name
+            and not open_orders.get(symbol)
+        ):
+            fama, mama = MAMA(minute_history["close"])
+
+            if fama[-1] < mama[-1]:
+                tlog(
+                    f"[{self.name}][{now}] Submitting sell for {position} shares of {symbol} at market {data.close}"
+                )
+                sell_indicators[symbol] = {
+                    "mama": mama[-5:].tolist(),
+                    "fama": fama[-5:].tolist(),
+                }
+
+                return (
+                    True,
+                    {"side": "sell", "qty": str(position), "type": "market",},
+                )
+
+        return False, {}
