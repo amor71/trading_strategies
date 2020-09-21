@@ -8,5 +8,5 @@ therapist==2.1.0
 liualgotrader==0.0.43
 setuptools==50.3.0
 wheel==0.35.1
-twine
+twine==3.2.0
 bandit
