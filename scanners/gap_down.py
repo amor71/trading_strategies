@@ -84,7 +84,7 @@ class GapDown(Scanner):
                         and ticker.lastTrade["p"] >= 50.0
                         and ticker.prevDay["v"] * ticker.lastTrade["p"]
                         > 500000.0
-                        and ticker.prevDay["l"] > ticker.day["o"]
+                        and ticker.prevDay["l"] * 0.9 > ticker.day["o"]
                         and ticker.todaysChangePerc < 0
                         and (
                             ticker.day["v"] > 30000.0
