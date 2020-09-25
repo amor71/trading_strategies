@@ -36,7 +36,7 @@ class MamaFama(Scanner):
                             (SELECT symbol, MAX(symbol_date) 
                              FROM stock_ohlc 
                              group by symbol) 
-                             and indicators->'fama' > indicators->'mama';
+                             and indicators->'mama' > indicators->'fama';
                     """
                 )
                 return [row[0] for row in rows]

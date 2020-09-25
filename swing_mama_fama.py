@@ -64,11 +64,12 @@ class SwingMamaFama(Strategy):
         backtesting: bool = False,
     ) -> Tuple[bool, Dict]:
         data = minute_history.iloc[-1]
-        fama, mama = MAMA(minute_history["close"])
+        mama, fama = MAMA(minute_history["close"])
 
-        if fama[-1] > mama[-1]:
-            stop_price = 0.0
-            target_price = 0.0
+        if mama[-1] > fama[-1]:
+            buy_price = data.close
+            stop_price = data.close * 0.98
+            target_price = data.close * 1.05
 
             stop_prices[symbol] = stop_price
             target_prices[symbol] = target_price
@@ -113,12 +114,17 @@ class SwingMamaFama(Strategy):
             }
 
             tlog(
-                f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at market target {target_prices[symbol]} stop {stop_prices[symbol]}"
+                f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {buy_price} target {target_prices[symbol]} stop {stop_prices[symbol]}"
             )
 
             return (
                 True,
-                {"side": "buy", "qty": str(shares_to_buy), "type": "market",},
+                {
+                    "side": "buy",
+                    "qty": str(shares_to_buy),
+                    "type": "limit",
+                    "limit_price": str(buy_price),
+                },
             )
 
         if (
@@ -127,15 +133,28 @@ class SwingMamaFama(Strategy):
             and last_used_strategy[symbol].name == self.name
             and not open_orders.get(symbol)
         ):
-            fama, mama = MAMA(minute_history["close"])
+            mama, fama = MAMA(minute_history["close"])
 
-            if fama[-1] < mama[-1]:
+            to_sell: bool = False
+            if data.close < stop_prices[symbol]:
+                reason = "stopped"
+                to_sell = True
+            elif data.close >= target_prices[symbol]:
+                reason = "target reached"
+                to_sell = True
+            elif mama[-1] < fama[-1]:
+                reason = "fama below mama"
+                to_sell = True
+
+            if to_sell:
                 tlog(
-                    f"[{self.name}][{now}] Submitting sell for {position} shares of {symbol} at market {data.close}"
+                    f"[{self.name}][{now}] Submitting sell for {position} shares of {symbol} at market {data.close} w reason {reason}"
                 )
+
                 sell_indicators[symbol] = {
                     "mama": mama[-5:].tolist(),
                     "fama": fama[-5:].tolist(),
+                    "reason": reason,
                 }
 
                 return (
