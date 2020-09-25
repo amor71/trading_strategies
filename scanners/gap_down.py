@@ -1,4 +1,10 @@
-"""find short-able, liquid, large-cap stocks that gap down"""
+"""
+    Find short-able, liquid, large-cap stocks that gap down.
+    Inspired by https://www.quantrocket.com/blog/buy-or-sell-down-gaps/
+
+    NOTE: the SMA criteria should be implemented as a buy signal (if really needed)
+        by the strategy
+"""
 
 import asyncio
 import statistics
