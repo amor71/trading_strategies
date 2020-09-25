@@ -3,46 +3,32 @@
 # if set to true, allow running outside market open hours
 bypass_market_schedule = true
 
+skip_existing = true
+test_scanners = true
+
 # ticket scanners, may have several
 # scanners during the day
 [scanners]
-    [scanners.GoldDigger]
-        filename = "scanners/gold_digger.py"
-        target_strategy_name = "golden_pair"
+    [scanners.GapDown]
+        filename = "scanners/gap_down.py"
+        target_strategy_name = "ShortGapDown"
 
-    [scanners.MamaFama]
-        filename = "scanners/mama_fama.py"
-        target_strategy_name = "SwingMamaFama"
+
 
 
 # trading strategies, can have several *strategy* blocks
 [strategies]
     # strategy class name, must implement Strategy class
-    [strategies.MomentumLongV3]
-        filename = "momentum_long_v3.py"
+    [strategies.ShortGapDown]
+        filename = "short_gap_down.py"
 
         # check_patterns = true
 
         # trading schedules block, trades many have
         # several windows within the same day
-        [[strategies.MomentumLongV3.schedule]]
+        [[strategies.ShortGapDown.schedule]]
             start = 15
             duration = 60
 
-    # strategy class name, must implement Strategy class
-    [strategies.GoldenPair]
-        filename = "golden_pair.py"
-
-        # check_patterns = true
-
-        # trading schedules block, trades many have
-        # several windows within the same day
-        [[strategies.GoldenPair.schedule]]
-            start = 15
-            duration = 60
-
-    # strategy class name, must implement Strategy class
-    [strategies.SwingMamaFama]
-        filename = "swing_mana_fama.py"
 
 

@@ -1,11 +1,14 @@
 """find short-able, liquid, large-cap stocks that gap down"""
 
 import asyncio
-from datetime import datetime, timedelta
+import statistics
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 import alpaca_trade_api as tradeapi
 from liualgotrader.common import config
+from liualgotrader.common.market_data import \
+    get_historical_data_from_polygon_by_range
 from liualgotrader.common.tlog import tlog
 from liualgotrader.scanners.base import Scanner
 from pytz import timezone
@@ -67,49 +70,70 @@ class GapDown(Scanner):
         await self._wait_time()
 
         try:
-            while True:
-                tickers = self.data_api.polygon.all_tickers()
-                tlog(
-                    f"{self.name} -> loaded {len(tickers)} tickers from Polygon"
+            tickers = self.data_api.polygon.all_tickers()
+            tlog(f"{self.name} -> loaded {len(tickers)} tickers from Polygon")
+            if not len(tickers):
+                return []
+
+            trade_able_symbols = self._get_short_able_trade_able_symbols()
+            unsorted = [
+                ticker
+                for ticker in tickers
+                if (
+                    ticker.ticker in trade_able_symbols
+                    and ticker.lastTrade["p"] >= 20.0
+                    and ticker.prevDay["v"] * ticker.lastTrade["p"] > 500000.0
+                    and ticker.prevDay["l"] > ticker.day["o"]
+                    and ticker.todaysChangePerc < 0
+                    and (
+                        ticker.day["v"] > 30000.0
+                        or config.bypass_market_schedule
+                    )
                 )
-                if not len(tickers):
-                    break
-                trade_able_symbols = self._get_short_able_trade_able_symbols()
+            ]
+
+            if len(unsorted):
+                symbols = [ticker.ticker for ticker in unsorted]
+                _daiy_data = get_historical_data_from_polygon_by_range(
+                    self.data_api,
+                    symbols,
+                    date.today() - timedelta(days=30),
+                    "day",
+                )
+                std = {}
+                for symbol in symbols:
+                    if symbol in _daiy_data:
+                        std[symbol] = statistics.pstdev(
+                            _daiy_data[symbol]["low"]
+                        )
 
                 unsorted = [
-                    ticker
-                    for ticker in tickers
-                    if (
-                        ticker.ticker in trade_able_symbols
-                        and ticker.lastTrade["p"] >= 50.0
-                        and ticker.prevDay["v"] * ticker.lastTrade["p"]
-                        > 500000.0
-                        and ticker.prevDay["l"] * 0.9 > ticker.day["o"]
-                        and ticker.todaysChangePerc < 0
-                        and (
-                            ticker.day["v"] > 30000.0
-                            or config.bypass_market_schedule
-                        )
-                    )
+                    x
+                    for x in unsorted
+                    if x.ticker in symbols
+                    and x.day["o"] < (x.prevDay["l"] - std[x.ticker])
                 ]
+
                 if len(unsorted) > 0:
                     ticker_by_volume = sorted(
                         unsorted,
                         key=lambda ticker: float(ticker.day["v"]),
                         reverse=True,
                     )
-                    tlog(
-                        f"{self.name} -> picked {len(ticker_by_volume)} symbols"
-                    )
-                    return [x.ticker for x in ticker_by_volume][
+                    r_symbols = [x.ticker for x in ticker_by_volume][
                         : self.max_symbols
                     ]
+                    tlog(
+                        f"{self.name} -> picked {len(r_symbols)} symbols {r_symbols}"
+                    )
+                    return r_symbols
 
-                tlog("did not find gaping down stocks, retrying")
+            tlog(f"{self.name} -> did not find gaping down stocks, sorry..")
 
-                await asyncio.sleep(30)
         except KeyboardInterrupt:
             tlog("KeyboardInterrupt")
             pass
+        except Exception as e:
+            print(e)
 
         return []
