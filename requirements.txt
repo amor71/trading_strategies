@@ -9,4 +9,4 @@ liualgotrader==0.0.55
 setuptools==50.3.0
 wheel==0.35.1
 twine==3.2.0
-bandit
+bandit==1.6.2
