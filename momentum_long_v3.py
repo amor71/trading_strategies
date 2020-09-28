@@ -343,7 +343,9 @@ class MomentumLongV3(Strategy):
                 sell_reasons.append("scale-out")
             elif bail_on_whiplash:
                 to_sell = True
-                sell_reasons.append("bail post whiplash")
+                partial_sell = False
+                limit_sell = True
+                sell_reasons.append("bail post whipsawed")
 
             if to_sell:
                 sell_indicators[symbol] = {

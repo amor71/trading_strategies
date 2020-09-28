@@ -77,6 +77,9 @@ class VWAPShort(Strategy):
             and not position
             and not open_orders.get(symbol, None)
         ):
+            if data.average > data.open:
+                return False, {}
+
             day_start = ts(config.market_open)
 
             try:
