@@ -212,6 +212,8 @@ class MomentumLongV3(Strategy):
                             shares_to_buy = 1
                         shares_to_buy -= position
                         if shares_to_buy > 0:
+                            self.whipsawed[symbol] = False
+
                             buy_price = max(data.close, data.vwap)
                             tlog(
                                 f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {buy_price} target {target_prices[symbol]} stop {stop_prices[symbol]}"
@@ -251,7 +253,7 @@ class MomentumLongV3(Strategy):
         ):
             if (
                 not self.whipsawed.get(symbol, None)
-                and data.close < latest_cost_basis[symbol] * 0.98
+                and data.close < latest_cost_basis[symbol] * 0.99
             ):
                 self.whipsawed[symbol] = True
 
@@ -296,8 +298,9 @@ class MomentumLongV3(Strategy):
                 and round(macd[-1], round_factor)
                 < round(macd[-2], round_factor)
             )
-            bail_on_whiplash = (
-                data.close > latest_cost_basis[symbol]
+            bail_on_whipsawed = (
+                self.whipsawed.get(symbol, False)
+                and data.close > latest_cost_basis[symbol]
                 and macd_below_signal
                 and round(macd[-1], round_factor)
                 < round(macd[-2], round_factor)
@@ -341,7 +344,7 @@ class MomentumLongV3(Strategy):
                 partial_sell = True
                 to_sell = True
                 sell_reasons.append("scale-out")
-            elif bail_on_whiplash:
+            elif bail_on_whipsawed:
                 to_sell = True
                 partial_sell = False
                 limit_sell = True
