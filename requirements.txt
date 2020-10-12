@@ -7,6 +7,6 @@ google-cloud-logging==1.15.1
 therapist==2.1.0
 liualgotrader==0.0.55
 setuptools==50.3.0
-wheel
+wheel==0.35.1
 twine
 bandit
