@@ -90,7 +90,11 @@ class MomentumLongV3(Strategy):
             try:
                 high_15m = minute_history[lbound:ubound]["high"].max()  # type: ignore
             except Exception as e:
-                tlog(f"{symbol}[{now}] failed to aggregate {ubound}:{lbound}")
+                # tlog(f"{minute_history[lbound]}")
+                # tlog(f"{minute_history[ubound]}")
+                tlog(
+                    f"{symbol}[{now}] failed to aggregate {lbound}:{ubound} {minute_history}"
+                )
                 return False, {}
 
             if data.close > high_15m or (
