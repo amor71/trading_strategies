@@ -159,7 +159,11 @@ class SwingMamaFama(Strategy):
 
                 return (
                     True,
-                    {"side": "sell", "qty": str(position), "type": "market",},
+                    {
+                        "side": "sell",
+                        "qty": str(position),
+                        "type": "market",
+                    },
                 )
 
         return False, {}

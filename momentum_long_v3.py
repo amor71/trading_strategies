@@ -268,7 +268,11 @@ class MomentumLongV3(Strategy):
             if data.vwap:
                 serie[-1] = data.vwap
 
-            macds = MACD(serie, 13, 21,)
+            macds = MACD(
+                serie,
+                13,
+                21,
+            )
 
             macd = macds[0]
             macd_signal = macds[1]
