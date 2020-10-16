@@ -4,6 +4,9 @@ from typing import Dict, List, Tuple
 
 import alpaca_trade_api as tradeapi
 import numpy as np
+from pandas import DataFrame as df
+from talib import BBANDS, MACD, RSI
+
 from liualgotrader.common import config
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators, buy_time,
@@ -14,8 +17,6 @@ from liualgotrader.common.trading_data import (buy_indicators, buy_time,
                                                target_prices)
 from liualgotrader.fincalcs.support_resistance import find_stop
 from liualgotrader.strategies.base import Strategy, StrategyType
-from pandas import DataFrame as df
-from talib import BBANDS, MACD, RSI
 
 
 class MomentumLongV3(Strategy):
@@ -83,6 +84,7 @@ class MomentumLongV3(Strategy):
             and not position
             and not open_orders.get(symbol, None)
             and not await self.should_cool_down(symbol, now)
+            and data.volume > 500
         ):
             # Check for buy signals
             lbound = config.market_open.replace(second=0, microsecond=0)
@@ -90,8 +92,6 @@ class MomentumLongV3(Strategy):
             try:
                 high_15m = minute_history[lbound:ubound]["high"].max()  # type: ignore
             except Exception as e:
-                # tlog(f"{minute_history[lbound]}")
-                # tlog(f"{minute_history[ubound]}")
                 tlog(
                     f"{symbol}[{now}] failed to aggregate {lbound}:{ubound} {minute_history}"
                 )
@@ -106,16 +106,8 @@ class MomentumLongV3(Strategy):
                     .dropna()
                     .between_time("9:30", "16:00")
                 )
-                close_5m = (
-                    minute_history["close"]
-                    .dropna()
-                    .between_time("9:30", "16:00")
-                    .resample("5min")
-                    .last()
-                ).dropna()
 
                 macds = MACD(close)
-                # sell_macds = MACD(close, 13, 21)
 
                 macd = macds[0]
                 macd_signal = macds[1]
@@ -284,6 +276,10 @@ class MomentumLongV3(Strategy):
             movement = (
                 data.close - latest_scalp_basis[symbol]
             ) / latest_scalp_basis[symbol]
+            max_movement = (
+                minute_history["close"][buy_time[symbol] :].max()
+                - latest_scalp_basis[symbol]
+            ) / latest_scalp_basis[symbol]
             macd_val = macd[-1]
             macd_signal_val = macd_signal[-1]
 
@@ -297,10 +293,11 @@ class MomentumLongV3(Strategy):
             macd_below_signal = round(macd_val, round_factor) < round(
                 macd_signal_val, round_factor
             )
+
             bail_out = (
                 (
                     latest_scalp_basis[symbol] > latest_cost_basis[symbol]
-                    or movement > 0.02
+                    or max_movement > 0.02
                 )
                 and macd_below_signal
                 and round(macd[-1], round_factor)

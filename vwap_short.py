@@ -4,6 +4,12 @@ from typing import Dict, List, Tuple
 
 import alpaca_trade_api as tradeapi
 import numpy as np
+from pandas import DataFrame as df
+from pandas import Series
+from pandas import Timestamp as ts
+from pandas import concat
+from talib import BBANDS, MACD, RSI
+
 from liualgotrader.common import config
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators, buy_time,
@@ -15,11 +21,6 @@ from liualgotrader.common.trading_data import (buy_indicators, buy_time,
 from liualgotrader.fincalcs.support_resistance import find_stop
 from liualgotrader.fincalcs.vwap import add_daily_vwap
 from liualgotrader.strategies.base import Strategy, StrategyType
-from pandas import DataFrame as df
-from pandas import Series
-from pandas import Timestamp as ts
-from pandas import concat
-from talib import BBANDS, MACD, RSI
 
 
 class VWAPShort(Strategy):
@@ -143,6 +144,8 @@ class VWAPShort(Strategy):
                 < open[-2]
                 <= close[-3]
                 < open[-3]
+                and close[-2] < vwap_series[-2]
+                and data.vwap < data.average
             ):
 
                 stop_price = vwap_series[-1]
@@ -194,6 +197,7 @@ class VWAPShort(Strategy):
                     "vwap_series": vwap_series[-5:].tolist(),
                     "vwap": data.vwap,
                     "avg": data.average,
+                    "volume": minute_history["volume"][-5:].tolist(),
                 }
 
                 return (
