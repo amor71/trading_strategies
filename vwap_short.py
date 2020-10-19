@@ -4,6 +4,12 @@ from typing import Dict, List, Tuple
 
 import alpaca_trade_api as tradeapi
 import numpy as np
+from pandas import DataFrame as df
+from pandas import Series
+from pandas import Timestamp as ts
+from pandas import concat
+from talib import BBANDS, MACD, RSI
+
 from liualgotrader.common import config
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators, buy_time,
@@ -15,11 +21,6 @@ from liualgotrader.common.trading_data import (buy_indicators, buy_time,
 from liualgotrader.fincalcs.support_resistance import find_stop
 from liualgotrader.fincalcs.vwap import add_daily_vwap
 from liualgotrader.strategies.base import Strategy, StrategyType
-from pandas import DataFrame as df
-from pandas import Series
-from pandas import Timestamp as ts
-from pandas import concat
-from talib import BBANDS, MACD, RSI
 
 
 class VWAPShort(Strategy):
@@ -80,48 +81,38 @@ class VWAPShort(Strategy):
             if data.average > data.open:
                 return False, {}
 
-            day_start = ts(config.market_open)
-
-            try:
-                day_start_index = minute_history["close"].index.get_loc(
-                    day_start, method="nearest"
-                )
-            except Exception as e:
-                tlog(
-                    f"[ERROR]{self.name}[{now}]{symbol} can't load index for {day_start} w/ {e}"
-                )
-                return False, {}
-
+            lbound = config.market_open.replace(second=0, microsecond=0)
+            ubound = config.market_close.replace(second=0, microsecond=0)
             close = (
-                minute_history["close"][day_start_index:-1]
+                minute_history["close"][lbound:ubound]
                 .dropna()
                 .between_time("9:30", "16:00")
                 .resample("5min")
                 .last()
             ).dropna()
             open = (
-                minute_history["open"][day_start_index:-1]
+                minute_history["open"][lbound:ubound]
                 .dropna()
                 .between_time("9:30", "16:00")
                 .resample("5min")
                 .first()
             ).dropna()
             high = (
-                minute_history["high"][day_start_index:-1]
+                minute_history["high"][lbound:ubound]
                 .dropna()
                 .between_time("9:30", "16:00")
                 .resample("5min")
                 .max()
             ).dropna()
             low = (
-                minute_history["low"][day_start_index:-1]
+                minute_history["low"][lbound:ubound]
                 .dropna()
                 .between_time("9:30", "16:00")
                 .resample("5min")
                 .min()
             ).dropna()
             volume = (
-                minute_history["volume"][day_start_index:-1]
+                minute_history["volume"][lbound:ubound]
                 .dropna()
                 .between_time("9:30", "16:00")
                 .resample("5min")
@@ -153,6 +144,8 @@ class VWAPShort(Strategy):
                 < open[-2]
                 <= close[-3]
                 < open[-3]
+                and close[-2] < vwap_series[-2]
+                and data.vwap < data.average
             ):
 
                 stop_price = vwap_series[-1]
@@ -204,6 +197,7 @@ class VWAPShort(Strategy):
                     "vwap_series": vwap_series[-5:].tolist(),
                     "vwap": data.vwap,
                     "avg": data.average,
+                    "volume": minute_history["volume"][-5:].tolist(),
                 }
 
                 return (
@@ -256,7 +250,11 @@ class VWAPShort(Strategy):
                 )
                 return (
                     True,
-                    {"side": "buy", "qty": str(-position), "type": "market",},
+                    {
+                        "side": "buy",
+                        "qty": str(-position),
+                        "type": "market",
+                    },
                 )
 
         return False, {}
