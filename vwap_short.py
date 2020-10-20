@@ -4,12 +4,6 @@ from typing import Dict, List, Tuple
 
 import alpaca_trade_api as tradeapi
 import numpy as np
-from pandas import DataFrame as df
-from pandas import Series
-from pandas import Timestamp as ts
-from pandas import concat
-from talib import BBANDS, MACD, RSI
-
 from liualgotrader.common import config
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators, buy_time,
@@ -21,6 +15,11 @@ from liualgotrader.common.trading_data import (buy_indicators, buy_time,
 from liualgotrader.fincalcs.support_resistance import find_stop
 from liualgotrader.fincalcs.vwap import add_daily_vwap
 from liualgotrader.strategies.base import Strategy, StrategyType
+from pandas import DataFrame as df
+from pandas import Series
+from pandas import Timestamp as ts
+from pandas import concat
+from talib import BBANDS, MACD, RSI
 
 
 class VWAPShort(Strategy):
@@ -82,37 +81,36 @@ class VWAPShort(Strategy):
                 return False, {}
 
             lbound = config.market_open.replace(second=0, microsecond=0)
-            ubound = config.market_close.replace(second=0, microsecond=0)
             close = (
-                minute_history["close"][lbound:ubound]
+                minute_history["close"][lbound:]
                 .dropna()
                 .between_time("9:30", "16:00")
                 .resample("5min")
                 .last()
             ).dropna()
             open = (
-                minute_history["open"][lbound:ubound]
+                minute_history["open"][lbound:]
                 .dropna()
                 .between_time("9:30", "16:00")
                 .resample("5min")
                 .first()
             ).dropna()
             high = (
-                minute_history["high"][lbound:ubound]
+                minute_history["high"][lbound:]
                 .dropna()
                 .between_time("9:30", "16:00")
                 .resample("5min")
                 .max()
             ).dropna()
             low = (
-                minute_history["low"][lbound:ubound]
+                minute_history["low"][lbound:]
                 .dropna()
                 .between_time("9:30", "16:00")
                 .resample("5min")
                 .min()
             ).dropna()
             volume = (
-                minute_history["volume"][lbound:ubound]
+                minute_history["volume"][lbound:]
                 .dropna()
                 .between_time("9:30", "16:00")
                 .resample("5min")
