@@ -193,6 +193,7 @@ class VWAPShort(Strategy):
 
                 sell_indicators[symbol] = {
                     "vwap_series": vwap_series[-5:].tolist(),
+                    "5-min-close": close[-5:].tolist(),
                     "vwap": data.vwap,
                     "avg": data.average,
                     "volume": minute_history["volume"][-5:].tolist(),
