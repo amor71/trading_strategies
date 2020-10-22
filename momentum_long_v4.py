@@ -106,136 +106,155 @@ class MomentumLongV3(Strategy):
                     .between_time("9:30", "16:00")
                 )
 
-                macds = MACD(close)
+                if not (
+                    data.vwap > data.open
+                    and data.vwap != 0.0
+                    or data.vwap == 0.0
+                    and data.close > data.open > prev_min.close
+                ):
+                    if debug:
+                        tlog(f"[{self.name}][{now}] price action not positive")
+                    return False, {}
 
+                macds = MACD(close)
                 macd = macds[0]
                 macd_signal = macds[1]
                 macd_hist = macds[2]
                 macd_trending = macd[-3] < macd[-2] < macd[-1]
-                macd_above_signal = macd[-1] > macd_signal[-1] * 1.1
+                macd_above_signal = macd[-1] > macd_signal[-1]
+                macd_upper_crossover = (
+                    macd[-2] > macd_signal[-2] >= macd_signal[-3] > macd[-3]
+                )
                 macd_hist_trending = (
                     macd_hist[-3] < macd_hist[-2] < macd_hist[-1]
                 )
 
+                to_buy = False
+                reason = []
                 if (
-                    macd[-1] > 0
+                    macd[-1] < 0
+                    and macd_upper_crossover
                     and macd_trending
                     and macd_above_signal
-                    and macd_hist_trending
-                    and (
-                        data.vwap > data.open > prev_min.close
-                        and data.vwap != 0.0
-                        or data.vwap == 0.0
-                        and data.close > data.open > prev_min.close
-                    )
                 ):
+                    to_buy = True
+                    reason.append("MACD crossover")
+
+                if macd_hist_trending and macd_hist[-3] <= 0 < macd_hist[-2]:
+                    to_buy = True
+                    reason.append("MACD histogram reversal")
+
+                if macd[-1] > 0 >= macd[-2] and macd_trending:
                     macd2 = MACD(close, 40, 60)[0]
                     if macd2[-1] >= 0 and np.diff(macd2)[-1] >= 0:
+                        to_buy = True
+                        reason.append("MACD zero-cross")
+
                         if debug:
                             tlog(
                                 f"[{self.name}][{now}] slow macd confirmed trend"
                             )
 
-                        # check RSI does not indicate overbought
-                        rsi = RSI(close, 14)
+                if to_buy:
+                    # check RSI does not indicate overbought
+                    rsi = RSI(close, 14)
 
+                    if debug:
+                        tlog(
+                            f"[{self.name}][{now}] {symbol} RSI={round(rsi[-1], 2)}"
+                        )
+
+                    rsi_limit = 75
+                    if rsi[-1] < rsi_limit:
                         if debug:
                             tlog(
-                                f"[{self.name}][{now}] {symbol} RSI={round(rsi[-1], 2)}"
+                                f"[{self.name}][{now}] {symbol} RSI {round(rsi[-1], 2)} <= {rsi_limit}"
                             )
-
-                        rsi_limit = 75
-                        if rsi[-1] < rsi_limit:
-                            if debug:
-                                tlog(
-                                    f"[{self.name}][{now}] {symbol} RSI {round(rsi[-1], 2)} <= {rsi_limit}"
-                                )
-                        else:
-                            tlog(
-                                f"[{self.name}][{now}] {symbol} RSI over-bought, cool down for 5 min"
-                            )
-                            cool_down[symbol] = now.replace(
-                                second=0, microsecond=0
-                            ) + timedelta(minutes=5)
-
-                            return False, {}
-
-                        stop_price = find_stop(
-                            data.close if not data.vwap else data.vwap,
-                            minute_history,
-                            now,
+                    else:
+                        tlog(
+                            f"[{self.name}][{now}] {symbol} RSI over-bought, cool down for 5 min"
                         )
-                        target_price = (
-                            3 * (data.close - stop_price) + data.close
-                        )
-                        target_prices[symbol] = target_price
-                        stop_prices[symbol] = stop_price
+                        cool_down[symbol] = now.replace(
+                            second=0, microsecond=0
+                        ) + timedelta(minutes=5)
 
-                        if portfolio_value is None:
-                            if trading_api:
+                        return False, {}
 
-                                retry = 3
-                                while retry > 0:
-                                    try:
-                                        portfolio_value = float(
-                                            trading_api.get_account().portfolio_value
-                                        )
-                                        break
-                                    except ConnectionError as e:
-                                        tlog(
-                                            f"[{symbol}][{now}[Error] get_account() failed w/ {e}, retrying {retry} more times"
-                                        )
-                                        await asyncio.sleep(0)
-                                        retry -= 1
+                    stop_price = find_stop(
+                        data.close if not data.vwap else data.vwap,
+                        minute_history,
+                        now,
+                    )
+                    target_price = 3 * (data.close - stop_price) + data.close
+                    target_prices[symbol] = target_price
+                    stop_prices[symbol] = stop_price
 
-                                if not portfolio_value:
-                                    tlog(
-                                        "f[{symbol}][{now}[Error] failed to get portfolio_value"
+                    if portfolio_value is None:
+                        if trading_api:
+
+                            retry = 3
+                            while retry > 0:
+                                try:
+                                    portfolio_value = float(
+                                        trading_api.get_account().portfolio_value
                                     )
-                                    return False, {}
-                            else:
-                                raise Exception(
-                                    f"{self.name}: both portfolio_value and trading_api can't be None"
+                                    break
+                                except ConnectionError as e:
+                                    tlog(
+                                        f"[{symbol}][{now}[Error] get_account() failed w/ {e}, retrying {retry} more times"
+                                    )
+                                    await asyncio.sleep(0)
+                                    retry -= 1
+
+                            if not portfolio_value:
+                                tlog(
+                                    "f[{symbol}][{now}[Error] failed to get portfolio_value"
                                 )
+                                return False, {}
+                        else:
+                            raise Exception(
+                                f"{self.name}: both portfolio_value and trading_api can't be None"
+                            )
 
-                        shares_to_buy = (
-                            portfolio_value
-                            * config.risk
-                            // (data.close - stop_prices[symbol])
+                    shares_to_buy = (
+                        portfolio_value
+                        * config.risk
+                        // (data.close - stop_prices[symbol])
+                    )
+                    if not shares_to_buy:
+                        shares_to_buy = 1
+                    shares_to_buy -= position
+                    if shares_to_buy > 0:
+                        self.whipsawed[symbol] = False
+
+                        buy_price = max(data.close, data.vwap)
+                        tlog(
+                            f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {buy_price} target {target_prices[symbol]} stop {stop_prices[symbol]}"
                         )
-                        if not shares_to_buy:
-                            shares_to_buy = 1
-                        shares_to_buy -= position
-                        if shares_to_buy > 0:
-                            self.whipsawed[symbol] = False
 
-                            buy_price = max(data.close, data.vwap)
-                            tlog(
-                                f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {buy_price} target {target_prices[symbol]} stop {stop_prices[symbol]}"
-                            )
+                        buy_indicators[symbol] = {
+                            "macd": macd[-5:].tolist(),
+                            "macd_signal": macd_signal[-5:].tolist(),
+                            "vwap": data.vwap,
+                            "avg": data.average,
+                            "reason": reason,
+                        }
 
-                            buy_indicators[symbol] = {
-                                "macd": macd[-5:].tolist(),
-                                "macd_signal": macd_signal[-5:].tolist(),
-                                "vwap": data.vwap,
-                                "avg": data.average,
+                        return (
+                            True,
+                            {
+                                "side": "buy",
+                                "qty": str(shares_to_buy),
+                                "type": "limit",
+                                "limit_price": str(buy_price),
                             }
-
-                            return (
-                                True,
-                                {
-                                    "side": "buy",
-                                    "qty": str(shares_to_buy),
-                                    "type": "limit",
-                                    "limit_price": str(buy_price),
-                                }
-                                if not morning_rush
-                                else {
-                                    "side": "buy",
-                                    "qty": str(shares_to_buy),
-                                    "type": "market",
-                                },
-                            )
+                            if not morning_rush
+                            else {
+                                "side": "buy",
+                                "qty": str(shares_to_buy),
+                                "type": "market",
+                            },
+                        )
             else:
                 if debug:
                     tlog(f"[{self.name}][{now}] {data.close} < 15min high ")
