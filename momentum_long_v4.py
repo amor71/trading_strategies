@@ -126,7 +126,10 @@ class MomentumLongV3(Strategy):
                     macd[-2] > macd_signal[-2] >= macd_signal[-3] > macd[-3]
                 )
                 macd_hist_trending = (
-                    macd_hist[-3] < macd_hist[-2] < macd_hist[-1]
+                    macd_hist[-4]
+                    < macd_hist[-3]
+                    < macd_hist[-2]
+                    < macd_hist[-1]
                 )
 
                 to_buy = False
@@ -315,7 +318,7 @@ class MomentumLongV3(Strategy):
             bail_out = (
                 (
                     latest_scalp_basis[symbol] > latest_cost_basis[symbol]
-                    or max_movement > 0.02
+                    or (max_movement > 0.02 and max_movement > movement)
                 )
                 and macd_below_signal
                 and round(macd[-1], round_factor)
