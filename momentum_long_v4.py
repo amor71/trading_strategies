@@ -119,7 +119,15 @@ class MomentumLongV3(Strategy):
                 macds = MACD(close)
                 macd = macds[0]
 
-                daiy_max_macd = macd.between_time("9:30", "16:00").max()
+                daiy_max_macd = (
+                    macd[
+                        now.replace(  # type: ignore
+                            hour=9, minute=30, second=0, microsecond=0
+                        ) :
+                    ]
+                    .between_time("9:30", "16:00")
+                    .max()
+                )
                 macd_signal = macds[1]
                 macd_hist = macds[2]
                 macd_trending = macd[-3] < macd[-2] < macd[-1]
@@ -381,6 +389,9 @@ class MomentumLongV3(Strategy):
                 partial_sell = False
                 limit_sell = True
                 sell_reasons.append("bail post whipsawed")
+            elif macd[-1] < macd_signal[-1] <= macd_signal[-2] < macd[-2]:
+                to_sell = True
+                sell_reasons.append("MACD cross signal from above")
 
             if to_sell:
                 sell_indicators[symbol] = {
