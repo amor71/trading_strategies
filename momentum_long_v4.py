@@ -118,6 +118,8 @@ class MomentumLongV3(Strategy):
 
                 macds = MACD(close)
                 macd = macds[0]
+
+                daiy_max_macd = macd.between_time("9:30", "16:00").max()
                 macd_signal = macds[1]
                 macd_hist = macds[2]
                 macd_trending = macd[-3] < macd[-2] < macd[-1]
@@ -143,7 +145,11 @@ class MomentumLongV3(Strategy):
                     to_buy = True
                     reason.append("MACD crossover")
 
-                if macd_hist_trending and macd_hist[-3] <= 0 < macd_hist[-2]:
+                if (
+                    macd_hist_trending
+                    and macd_hist[-3] <= 0 < macd_hist[-2]
+                    and macd[-1] < daiy_max_macd
+                ):
                     to_buy = True
                     reason.append("MACD histogram reversal")
 

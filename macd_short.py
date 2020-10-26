@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, List, Tuple
 
@@ -24,7 +24,6 @@ class MACDTrend(Enum):
 
 class MACDShort(Strategy):
     name = "macd_short"
-    macd_trend: Dict[str, MACDTrend] = {}
 
     def __init__(
         self,
@@ -75,38 +74,52 @@ class MACDShort(Strategy):
             close = (
                 minute_history["close"].dropna().between_time("9:30", "16:00")
             )
+
+            # Check for buy signals
+            lbound = config.market_open.replace(second=0, microsecond=0)
+            ubound = lbound + timedelta(minutes=15)
+            try:
+                high_15m = minute_history[lbound:ubound]["high"].max()  # type: ignore
+                min_15m = minute_history[lbound:ubound]["low"].min()  # type: ignore
+            except Exception as e:
+                tlog(
+                    f"{symbol}[{now}] failed to aggregate {lbound}:{ubound} {minute_history}"
+                )
+                return False, {}
+
+            if (high_15m - min_15m) / min_15m > 0.10:
+                return False, {}
+
             macds = MACD(close, 13, 21)
             macd = macds[0]
             macd_signal = macds[1]
             macd_hist = macds[2]
 
-            if macd[-2] > macd[-3] < macd[-4]:
-                self.macd_trend[symbol] = MACDTrend.UP
-
             macd_above_signal = (
-                macd[-1] > macd_signal[-1]
-                and macd[-2] > macd_signal[-2]
-                and macd[-3] > macd_signal[-3]
+                macd[-2] > macd_signal[-2] and macd[-3] > macd_signal[-3]
             )
-            hist_trend_down = macd_hist[-1] < macd_hist[-2] < macd_hist[-3]
+            hist_trending_down = macd_hist[-1] < macd_hist[-2] < macd_hist[-3]
 
+            macd_treding_down = macd[-1] < macd[-2] < macd[-3]
             to_buy_short = False
             reason: List[str] = []
             if (
                 macd_above_signal
-                and hist_trend_down
-                and self.macd_trend.get(symbol, False)
+                and hist_trending_down
+                and macd_treding_down
                 and macd[-2] > 0
                 and macd[-1] > 0
+                and data.close < data.open
+                and data.vwap < data.open
             ):
                 to_buy_short = True
                 reason.append(
-                    "MACD above signal, MACD hist trending down, MACD trended up"
+                    "MACD positive & above signal, MACD hist trending down, MACD trended down"
                 )
 
             if to_buy_short:
                 stop_price = data.close + 0.05
-                target_price = data.average * 0.98
+                target_price = data.average * 0.95
 
                 target_prices[symbol] = target_price
                 stop_prices[symbol] = stop_price
@@ -183,7 +196,7 @@ class MACDShort(Strategy):
             hist_change_trend = macd_hist[-2] > macd_hist[-3]
             below_signal = macd[-1] < macd_signal[-1]
             crossing_above_signal = (
-                macd[-1] > macd_signal[-1] > macd_signal[-2] > macd[-2]
+                macd[-1] > macd_signal[-1] >= macd_signal[-2] >= macd[-2]
             )
             to_sell = False
             reason = []
@@ -202,7 +215,6 @@ class MACDShort(Strategy):
                 to_sell = True
                 reason.append("stopped")
             elif data.close <= target_prices[symbol]:
-                to_sell = True
                 reason.append("target reached")
 
             if to_sell:
