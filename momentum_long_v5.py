@@ -18,9 +18,10 @@ from pandas import DataFrame as df
 from talib import BBANDS, MACD, RSI
 
 
-class MomentumLongV3(Strategy):
+class MomentumLongV5(Strategy):
     name = "momentum_long"
     whipsawed: Dict = {}
+    down_cross: Dict = {}
 
     def __init__(
         self,
@@ -96,9 +97,13 @@ class MomentumLongV3(Strategy):
                 )
                 return False, {}
 
-            if data.close > high_15m or (
-                hasattr(config, "bypass_market_schedule")
-                and config.bypass_market_schedule
+            if (
+                True
+                or data.close > high_15m
+                or (
+                    hasattr(config, "bypass_market_schedule")
+                    and config.bypass_market_schedule
+                )
             ):
                 close = (
                     minute_history["close"]
@@ -106,71 +111,51 @@ class MomentumLongV3(Strategy):
                     .between_time("9:30", "16:00")
                 )
 
-                if not (
-                    data.vwap > data.open
-                    and data.vwap != 0.0
-                    or data.vwap == 0.0
-                    and data.close > data.open
-                ):
-                    if debug:
-                        tlog(f"[{self.name}][{now}] price action not positive")
-                    return False, {}
-
-                macds = MACD(close)
-                macd = macds[0]
-
-                daiy_max_macd = (
-                    macd[
-                        now.replace(  # type: ignore
-                            hour=9, minute=30, second=0, microsecond=0
-                        ) :
-                    ]
+                # calc macd on 5 mib
+                close_5min = (
+                    minute_history["close"][lbound:]
+                    .dropna()
                     .between_time("9:30", "16:00")
-                    .max()
-                )
+                    .resample("5min")
+                    .last()
+                ).dropna()
+
+                macds = MACD(close_5min, 13, 21)
+                macd = macds[0]
                 macd_signal = macds[1]
                 macd_hist = macds[2]
-                macd_trending = macd[-3] < macd[-2] < macd[-1]
-                macd_above_signal = macd[-1] > macd_signal[-1]
-                macd_upper_crossover = (
-                    macd[-2] > macd_signal[-2] >= macd_signal[-3] > macd[-3]
-                )
-                macd_hist_trending = (
-                    macd_hist[-4]
-                    < macd_hist[-3]
-                    < macd_hist[-2]
-                    < macd_hist[-1]
-                )
+
+                # check if zero-crossing into negative, mark that point
+                if macd[-1] < 0 <= macd[-2] and not self.down_cross.get(
+                    symbol, None
+                ):
+                    self.down_cross[symbol] = data.close
+                    tlog(
+                        f"{self.name}: [{now}]{symbol} identified down-ward zero-crossing of 5-min MACD w/ { self.down_cross[symbol]}"
+                    )
+                    return False, {}
+                elif self.down_cross.get(symbol, None) and macd[-1] >= 0:
+                    self.down_cross[symbol] = None
+                    tlog(
+                        f"{self.name}: [{now}]identified up-ward zero-crossing of 5-min MACD"
+                    )
+                    return False, {}
 
                 to_buy = False
                 reason = []
+                # if passed zero crossing -> look for change in trend
                 if (
-                    macd[-1] < 0
-                    and macd_upper_crossover
-                    and macd_trending
-                    and macd_above_signal
+                    self.down_cross.get(symbol, None)
+                    and 0 > macd[-1] > macd[-2] < macd[-3]
                 ):
-                    to_buy = True
-                    reason.append("MACD crossover")
+                    tlog(
+                        f"{self.name}: [{now}]{symbol }identified up-ward trend {macd[-1]}, {macd[-2]}, {macd[-3]} price {data.close}"
+                    )
 
-                if (
-                    macd_hist_trending
-                    and macd_hist[-3] <= 0 < macd_hist[-2]
-                    and macd[-1] < daiy_max_macd
-                ):
-                    to_buy = True
-                    reason.append("MACD histogram reversal")
-
-                if macd[-1] > 0 >= macd[-2] and macd_trending:
-                    macd2 = MACD(close, 40, 60)[0]
-                    if macd2[-1] >= 0 and np.diff(macd2)[-1] >= 0:
+                    # check if price actually went down and not up
+                    if data.close < self.down_cross[symbol]:
                         to_buy = True
-                        reason.append("MACD zero-cross")
-
-                        if debug:
-                            tlog(
-                                f"[{self.name}][{now}] slow macd confirmed trend"
-                            )
+                        reason.append("MACD signal")
 
                 if to_buy:
                     # check RSI does not indicate overbought
@@ -197,12 +182,15 @@ class MomentumLongV3(Strategy):
 
                         return False, {}
 
-                    stop_price = find_stop(
-                        data.close if not data.vwap else data.vwap,
-                        minute_history,
-                        now,
-                    )
-                    target_price = 3 * (data.close - stop_price) + data.close
+                    stop_price = data.close * 0.95
+                    # find_stop(
+                    #    data.close if not data.vwap else data.vwap,
+                    #    minute_history,
+                    #    now,
+                    # )
+                    target_price = self.down_cross[symbol] * 1.2
+
+                    # 3 * (data.close - stop_price) + data.close
                     target_prices[symbol] = target_price
                     stop_prices[symbol] = stop_price
 
@@ -356,18 +344,6 @@ class MomentumLongV3(Strategy):
             if data.close <= stop_prices[symbol]:
                 to_sell = True
                 sell_reasons.append("stopped")
-            elif (
-                below_cost_base
-                and round(macd_val, 2) < 0
-                and rsi[-1] < rsi[-2]
-                and round(macd[-1], round_factor)
-                < round(macd[-2], round_factor)
-                and data.vwap < 0.95 * data.average
-            ):
-                to_sell = True
-                sell_reasons.append(
-                    "below cost & macd negative & RSI trending down and too far from VWAP"
-                )
             elif data.close >= target_prices[symbol] and macd[-1] <= 0:
                 to_sell = True
                 sell_reasons.append("above target & macd negative")
@@ -389,9 +365,9 @@ class MomentumLongV3(Strategy):
                 partial_sell = False
                 limit_sell = True
                 sell_reasons.append("bail post whipsawed")
-            elif macd[-1] < macd_signal[-1] <= macd_signal[-2] < macd[-2]:
-                to_sell = True
-                sell_reasons.append("MACD cross signal from above")
+            # elif macd[-1] < macd_signal[-1] <= macd_signal[-2] < macd[-2]:
+            #    to_sell = True
+            #    sell_reasons.append("MACD cross signal from above")
 
             if to_sell:
                 sell_indicators[symbol] = {

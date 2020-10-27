@@ -118,8 +118,8 @@ class MACDShort(Strategy):
                 )
 
             if to_buy_short:
-                stop_price = data.close + 0.05
-                target_price = data.average * 0.95
+                stop_price = data.close * 1.03
+                target_price = data.average * 0.90
 
                 target_prices[symbol] = target_price
                 stop_prices[symbol] = stop_price
@@ -196,7 +196,7 @@ class MACDShort(Strategy):
             hist_change_trend = macd_hist[-2] > macd_hist[-3]
             below_signal = macd[-1] < macd_signal[-1]
             crossing_above_signal = (
-                macd[-1] > macd_signal[-1] >= macd_signal[-2] >= macd[-2]
+                macd[-1] > macd_signal[-1] and macd_signal[-2] >= macd[-2]
             )
             to_sell = False
             reason = []
