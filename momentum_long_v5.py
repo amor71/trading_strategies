@@ -19,7 +19,7 @@ from talib import BBANDS, MACD, RSI
 
 
 class MomentumLongV5(Strategy):
-    name = "momentum_long"
+    name = "momentum_long_v5"
     whipsawed: Dict = {}
     down_cross: Dict = {}
 
@@ -95,7 +95,7 @@ class MomentumLongV5(Strategy):
                 tlog(
                     f"{symbol}[{now}] failed to aggregate {lbound}:{ubound} {minute_history}"
                 )
-                return False, {}
+                raise
 
             if (
                 True
