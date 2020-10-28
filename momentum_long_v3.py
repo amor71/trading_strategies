@@ -19,7 +19,7 @@ from talib import BBANDS, MACD, RSI
 
 
 class MomentumLongV3(Strategy):
-    name = "momentum_long"
+    name = "momentum_long_v3"
     whipsawed: Dict = {}
 
     def __init__(

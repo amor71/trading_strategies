@@ -86,184 +86,152 @@ class MomentumLongV5(Strategy):
             and not await self.should_cool_down(symbol, now)
             and data.volume > 500
         ):
-            # Check for buy signals
-            lbound = config.market_open.replace(second=0, microsecond=0)
-            ubound = lbound + timedelta(minutes=15)
-            try:
-                high_15m = minute_history[lbound:ubound]["high"].max()  # type: ignore
-            except Exception as e:
-                tlog(
-                    f"{symbol}[{now}] failed to aggregate {lbound}:{ubound} {minute_history}"
-                )
-                raise
+            close = (
+                minute_history["close"].dropna().between_time("9:30", "16:00")
+            )
 
-            if (
-                True
-                or data.close > high_15m
-                or (
-                    hasattr(config, "bypass_market_schedule")
-                    and config.bypass_market_schedule
-                )
+            # calc macd on 5 mib
+            close_5min = (
+                minute_history["close"]
+                .dropna()
+                .between_time("9:30", "16:00")
+                .resample("5min")
+                .last()
+            ).dropna()
+
+            macds = MACD(close_5min, 13, 21)
+            macd = macds[0]
+            macd_signal = macds[1]
+
+            # check if zero-crossing into negative, mark that point
+            if macd[-1] < 0 <= macd[-2] and not self.down_cross.get(
+                symbol, None
             ):
-                close = (
-                    minute_history["close"]
-                    .dropna()
-                    .between_time("9:30", "16:00")
+                self.down_cross[symbol] = data.close
+                tlog(
+                    f"{self.name}: [{now}]{symbol} identified down-ward zero-crossing of 5-min MACD w/ { self.down_cross[symbol]}"
+                )
+                return False, {}
+            elif self.down_cross.get(symbol, None) and macd[-1] >= 0:
+                self.down_cross[symbol] = None
+                tlog(
+                    f"{self.name}: [{now}]identified up-ward zero-crossing of 5-min MACD"
+                )
+                return False, {}
+
+            to_buy = False
+            reason = []
+            # if passed zero crossing -> look for change in trend
+            if (
+                self.down_cross.get(symbol, None)
+                and 0 > macd[-1] > macd[-2] < macd[-3]
+            ):
+                tlog(
+                    f"{self.name}: [{now}]{symbol }identified up-ward trend {macd[-1]}, {macd[-2]}, {macd[-3]} price {data.close}"
                 )
 
-                # calc macd on 5 mib
-                close_5min = (
-                    minute_history["close"][lbound:]
-                    .dropna()
-                    .between_time("9:30", "16:00")
-                    .resample("5min")
-                    .last()
-                ).dropna()
+                # check if price actually went down and not up
+                if data.close < self.down_cross[symbol]:
+                    to_buy = True
+                    reason.append("MACD signal")
 
-                macds = MACD(close_5min, 13, 21)
-                macd = macds[0]
-                macd_signal = macds[1]
-                macd_hist = macds[2]
+            if to_buy:
+                # check RSI does not indicate overbought
+                rsi = RSI(close, 14)
 
-                # check if zero-crossing into negative, mark that point
-                if macd[-1] < 0 <= macd[-2] and not self.down_cross.get(
-                    symbol, None
-                ):
-                    self.down_cross[symbol] = data.close
+                if debug:
                     tlog(
-                        f"{self.name}: [{now}]{symbol} identified down-ward zero-crossing of 5-min MACD w/ { self.down_cross[symbol]}"
-                    )
-                    return False, {}
-                elif self.down_cross.get(symbol, None) and macd[-1] >= 0:
-                    self.down_cross[symbol] = None
-                    tlog(
-                        f"{self.name}: [{now}]identified up-ward zero-crossing of 5-min MACD"
-                    )
-                    return False, {}
-
-                to_buy = False
-                reason = []
-                # if passed zero crossing -> look for change in trend
-                if (
-                    self.down_cross.get(symbol, None)
-                    and 0 > macd[-1] > macd[-2] < macd[-3]
-                ):
-                    tlog(
-                        f"{self.name}: [{now}]{symbol }identified up-ward trend {macd[-1]}, {macd[-2]}, {macd[-3]} price {data.close}"
+                        f"[{self.name}][{now}] {symbol} RSI={round(rsi[-1], 2)}"
                     )
 
-                    # check if price actually went down and not up
-                    if data.close < self.down_cross[symbol]:
-                        to_buy = True
-                        reason.append("MACD signal")
-
-                if to_buy:
-                    # check RSI does not indicate overbought
-                    rsi = RSI(close, 14)
-
+                rsi_limit = 75
+                if rsi[-1] < rsi_limit:
                     if debug:
                         tlog(
-                            f"[{self.name}][{now}] {symbol} RSI={round(rsi[-1], 2)}"
+                            f"[{self.name}][{now}] {symbol} RSI {round(rsi[-1], 2)} <= {rsi_limit}"
                         )
-
-                    rsi_limit = 75
-                    if rsi[-1] < rsi_limit:
-                        if debug:
-                            tlog(
-                                f"[{self.name}][{now}] {symbol} RSI {round(rsi[-1], 2)} <= {rsi_limit}"
-                            )
-                    else:
-                        tlog(
-                            f"[{self.name}][{now}] {symbol} RSI over-bought, cool down for 5 min"
-                        )
-                        cool_down[symbol] = now.replace(
-                            second=0, microsecond=0
-                        ) + timedelta(minutes=5)
-
-                        return False, {}
-
-                    stop_price = data.close * 0.95
-                    # find_stop(
-                    #    data.close if not data.vwap else data.vwap,
-                    #    minute_history,
-                    #    now,
-                    # )
-                    target_price = self.down_cross[symbol] * 1.2
-
-                    # 3 * (data.close - stop_price) + data.close
-                    target_prices[symbol] = target_price
-                    stop_prices[symbol] = stop_price
-
-                    if portfolio_value is None:
-                        if trading_api:
-
-                            retry = 3
-                            while retry > 0:
-                                try:
-                                    portfolio_value = float(
-                                        trading_api.get_account().portfolio_value
-                                    )
-                                    break
-                                except ConnectionError as e:
-                                    tlog(
-                                        f"[{symbol}][{now}[Error] get_account() failed w/ {e}, retrying {retry} more times"
-                                    )
-                                    await asyncio.sleep(0)
-                                    retry -= 1
-
-                            if not portfolio_value:
-                                tlog(
-                                    "f[{symbol}][{now}[Error] failed to get portfolio_value"
-                                )
-                                return False, {}
-                        else:
-                            raise Exception(
-                                f"{self.name}: both portfolio_value and trading_api can't be None"
-                            )
-
-                    shares_to_buy = (
-                        portfolio_value
-                        * config.risk
-                        // (data.close - stop_prices[symbol])
+                else:
+                    tlog(
+                        f"[{self.name}][{now}] {symbol} RSI over-bought, cool down for 5 min"
                     )
-                    if not shares_to_buy:
-                        shares_to_buy = 1
-                    shares_to_buy -= position
-                    if shares_to_buy > 0:
-                        self.whipsawed[symbol] = False
+                    cool_down[symbol] = now.replace(
+                        second=0, microsecond=0
+                    ) + timedelta(minutes=5)
 
-                        buy_price = max(data.close, data.vwap)
-                        tlog(
-                            f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {buy_price} target {target_prices[symbol]} stop {stop_prices[symbol]}"
+                    return False, {}
+
+                stop_price = data.close * 0.95
+                target_price = self.down_cross[symbol] * 1.15
+                target_prices[symbol] = target_price
+                stop_prices[symbol] = stop_price
+
+                if portfolio_value is None:
+                    if trading_api:
+
+                        retry = 3
+                        while retry > 0:
+                            try:
+                                portfolio_value = float(
+                                    trading_api.get_account().portfolio_value
+                                )
+                                break
+                            except ConnectionError as e:
+                                tlog(
+                                    f"[{symbol}][{now}[Error] get_account() failed w/ {e}, retrying {retry} more times"
+                                )
+                                await asyncio.sleep(0)
+                                retry -= 1
+
+                        if not portfolio_value:
+                            tlog(
+                                "f[{symbol}][{now}[Error] failed to get portfolio_value"
+                            )
+                            return False, {}
+                    else:
+                        raise Exception(
+                            f"{self.name}: both portfolio_value and trading_api can't be None"
                         )
 
-                        buy_indicators[symbol] = {
-                            "macd": macd[-5:].tolist(),
-                            "macd_signal": macd_signal[-5:].tolist(),
-                            "vwap": data.vwap,
-                            "avg": data.average,
-                            "reason": reason,
+                shares_to_buy = (
+                    portfolio_value
+                    * config.risk
+                    // (data.close - stop_prices[symbol])
+                )
+                if not shares_to_buy:
+                    shares_to_buy = 1
+                shares_to_buy -= position
+                if shares_to_buy > 0:
+                    self.whipsawed[symbol] = False
+
+                    buy_price = max(data.close, data.vwap)
+                    tlog(
+                        f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {buy_price} target {target_prices[symbol]} stop {stop_prices[symbol]}"
+                    )
+
+                    buy_indicators[symbol] = {
+                        "macd": macd[-5:].tolist(),
+                        "macd_signal": macd_signal[-5:].tolist(),
+                        "vwap": data.vwap,
+                        "avg": data.average,
+                        "reason": reason,
+                    }
+
+                    return (
+                        True,
+                        {
+                            "side": "buy",
+                            "qty": str(shares_to_buy),
+                            "type": "limit",
+                            "limit_price": str(buy_price),
                         }
-
-                        return (
-                            True,
-                            {
-                                "side": "buy",
-                                "qty": str(shares_to_buy),
-                                "type": "limit",
-                                "limit_price": str(buy_price),
-                            }
-                            if not morning_rush
-                            else {
-                                "side": "buy",
-                                "qty": str(shares_to_buy),
-                                "type": "market",
-                            },
-                        )
-            else:
-                if debug:
-                    tlog(f"[{self.name}][{now}] {data.close} < 15min high ")
-        if (
+                        if not morning_rush
+                        else {
+                            "side": "buy",
+                            "qty": str(shares_to_buy),
+                            "type": "market",
+                        },
+                    )
+        elif (
             await super().is_sell_time(now)
             and position > 0
             and symbol in latest_cost_basis

@@ -18,8 +18,8 @@ from pandas import DataFrame as df
 from talib import BBANDS, MACD, RSI
 
 
-class MomentumLongV3(Strategy):
-    name = "momentum_long"
+class MomentumLongV4(Strategy):
+    name = "momentum_long_v4"
     whipsawed: Dict = {}
 
     def __init__(
@@ -158,7 +158,6 @@ class MomentumLongV3(Strategy):
                     and macd_hist[-3] <= 0 < macd_hist[-2]
                     and macd[-1] < daiy_max_macd
                 ):
-                    to_buy = True
                     reason.append("MACD histogram reversal")
 
                 if macd[-1] > 0 >= macd[-2] and macd_trending:
@@ -390,7 +389,6 @@ class MomentumLongV3(Strategy):
                 limit_sell = True
                 sell_reasons.append("bail post whipsawed")
             elif macd[-1] < macd_signal[-1] <= macd_signal[-2] < macd[-2]:
-                to_sell = True
                 sell_reasons.append("MACD cross signal from above")
 
             if to_sell:
