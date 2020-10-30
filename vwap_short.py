@@ -133,8 +133,11 @@ class VWAPShort(Strategy):
 
             vwap_series = df["average"]
 
+            macds = MACD(close, 13, 21)
+            macd = macds[0]
+            macd_signal = macds[1]
             if (
-                data.close < vwap_series[-1] * 0.99
+                data.close < vwap_series[-1] * 0.98
                 and self.was_above_vwap.get(symbol, False)
                 and close[-1]
                 < open[-1]
@@ -144,6 +147,7 @@ class VWAPShort(Strategy):
                 < open[-3]
                 and close[-2] < vwap_series[-2]
                 and data.vwap < data.average
+                and macd[-1] < macd_signal[-1]
             ):
 
                 stop_price = vwap_series[-1]
