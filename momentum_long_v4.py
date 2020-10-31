@@ -339,7 +339,7 @@ class MomentumLongV4(Strategy):
             )
             bail_on_whipsawed = (
                 self.whipsawed.get(symbol, False)
-                and data.close > latest_cost_basis[symbol]
+                and movement > 0.01
                 and macd_below_signal
                 and round(macd[-1], round_factor)
                 < round(macd[-2], round_factor)
