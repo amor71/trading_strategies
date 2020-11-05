@@ -160,8 +160,8 @@ class MomentumLongV5(Strategy):
 
                     return False, {}
 
-                stop_price = data.close * 0.95
-                target_price = self.down_cross[symbol] * 1.15
+                stop_price = data.close * 0.96
+                target_price = self.down_cross[symbol] * 1.12
                 target_prices[symbol] = target_price
                 stop_prices[symbol] = stop_price
 
