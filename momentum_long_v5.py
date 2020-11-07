@@ -124,7 +124,9 @@ class MomentumLongV5(Strategy):
             # if passed zero crossing -> look for change in trend
             if (
                 self.down_cross.get(symbol, None)
-                and 0 > macd[-1] > macd[-2] < macd[-3]
+                and macd[-1] > macd[-2] > macd[-3]
+                and macd[-1] > macd_signal[-1] > macd_signal[-2]
+                and macd[-2] > macd_signal[-2]
             ):
                 tlog(
                     f"{self.name}: [{now}]{symbol }identified up-ward trend {macd[-1]}, {macd[-2]}, {macd[-3]} price {data.close}"
