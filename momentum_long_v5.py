@@ -90,7 +90,7 @@ class MomentumLongV5(Strategy):
                 minute_history["close"].dropna().between_time("9:30", "16:00")
             )
 
-            # calc macd on 5 mib
+            # calc macd on 5 min
             close_5min = (
                 minute_history["close"]
                 .dropna()

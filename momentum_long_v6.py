@@ -285,7 +285,6 @@ class MomentumLongV6(Strategy):
             and last_used_strategy[symbol].name == self.name
             and data.volume > 500
         ):
-
             if symbol not in self.top_up:
                 return False, {}
 
@@ -333,7 +332,7 @@ class MomentumLongV6(Strategy):
                 if movement < 0.005:
                     return False, {}
 
-                shares_to_buy = position * 0.10
+                shares_to_buy = int(position * 0.20)
                 buy_price = max(data.close, data.vwap)
                 reason = ["additional buy"]
                 tlog(

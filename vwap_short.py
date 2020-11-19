@@ -6,19 +6,18 @@ import alpaca_trade_api as tradeapi
 import numpy as np
 from liualgotrader.common import config
 from liualgotrader.common.tlog import tlog
-from liualgotrader.common.trading_data import (buy_indicators, buy_time,
-                                               cool_down, last_used_strategy,
-                                               latest_cost_basis,
-                                               latest_scalp_basis, open_orders,
+from liualgotrader.common.trading_data import (buy_indicators,
+                                               last_used_strategy,
+                                               latest_cost_basis, open_orders,
                                                sell_indicators, stop_prices,
                                                target_prices)
-from liualgotrader.fincalcs.support_resistance import find_stop
 from liualgotrader.fincalcs.vwap import add_daily_vwap
 from liualgotrader.strategies.base import Strategy, StrategyType
 from pandas import DataFrame as df
-from pandas import Series
 from pandas import Timestamp as ts
 from pandas import concat
+from scipy import stats
+from tabulate import tabulate
 from talib import BBANDS, MACD, RSI
 
 
@@ -77,7 +76,9 @@ class VWAPShort(Strategy):
             and not position
             and not open_orders.get(symbol, None)
         ):
-            if data.average > data.open:
+            if data.open > data.average:
+                if debug:
+                    tlog(f"{self.name} {symbol} trending up: {data}")
                 return False, {}
 
             lbound = config.market_open.replace(second=0, microsecond=0)
@@ -116,6 +117,7 @@ class VWAPShort(Strategy):
                 .resample("5min")
                 .sum()
             ).dropna()
+            volume = volume[volume != 0]
 
             df = concat(
                 [
@@ -133,25 +135,50 @@ class VWAPShort(Strategy):
 
             vwap_series = df["average"]
 
-            macds = MACD(close, 13, 21)
-            macd = macds[0]
-            macd_signal = macds[1]
-            if (
-                data.close < vwap_series[-1] * 0.98
-                and self.was_above_vwap.get(symbol, False)
-                and close[-1]
-                < open[-1]
-                <= close[-2]
-                < open[-2]
-                <= close[-3]
-                < open[-3]
-                and close[-2] < vwap_series[-2]
-                and data.vwap < data.average
-                and macd[-1] < macd_signal[-1]
-            ):
+            # calc macd on 5 min
+            close_5min = (
+                minute_history["close"]
+                .dropna()
+                .between_time("9:30", "16:00")
+                .resample("5min")
+                .last()
+            ).dropna()
 
-                stop_price = vwap_series[-1]
-                target_price = data.close - 3 * (stop_price - data.close)
+            if debug:
+                tlog(
+                    f"\n{tabulate(df[-10:], headers='keys', tablefmt='psql')}"
+                )
+            macds = MACD(close_5min)
+            macd = macds[0].round(3)
+            macd_signal = macds[1].round(3)
+            macd_hist = macds[2].round(3)
+            vwap_series = vwap_series.round(3)
+            close = close.round(3)
+            if (
+                self.was_above_vwap.get(symbol, False)
+                and close[-1] < vwap_series[-1]
+                and close[-2] < vwap_series[-2]
+                and close[-3] < vwap_series[-3]
+                and close[-1] < open[-1]
+                and close[-2] < open[-2]
+                and close[-3] < open[-3]
+                and macd[-1] < macd_signal[-1] < 0
+                and macd[-1] < 0
+                and macd_hist[-1] < macd_hist[-2] < macd_hist[-3] < 0
+                and data.close < data.open
+                and data.close
+                < minute_history["close"][-2]
+                < minute_history["close"][-3]
+            ):
+                tlog(
+                    f"\n{tabulate(df[-10:], headers='keys', tablefmt='psql')}"
+                )
+
+                stop_price = (vwap_series[-1] + data.close) / 2
+                target_price = min(
+                    data.close - 10 * (stop_price - data.close),
+                    data.close * 0.98,
+                )
 
                 stop_prices[symbol] = stop_price
                 target_prices[symbol] = target_price
@@ -182,10 +209,11 @@ class VWAPShort(Strategy):
                             f"{self.name}: both portfolio_value and trading_api can't be None"
                         )
 
-                shares_to_buy = (
+                shares_to_buy = max(
                     portfolio_value
                     * config.risk
-                    // (data.close - stop_prices[symbol])
+                    // (data.close - stop_prices[symbol]),
+                    -portfolio_value * 0.02 // data.close,
                 )
                 if not shares_to_buy:
                     shares_to_buy = 1
@@ -194,7 +222,6 @@ class VWAPShort(Strategy):
                 tlog(
                     f"[{self.name}][{now}] Submitting buy short for {-shares_to_buy} shares of {symbol} at {buy_price} target {target_prices[symbol]} stop {stop_prices[symbol]}"
                 )
-
                 sell_indicators[symbol] = {
                     "vwap_series": vwap_series[-5:].tolist(),
                     "5-min-close": close[-5:].tolist(),
@@ -202,7 +229,6 @@ class VWAPShort(Strategy):
                     "avg": data.average,
                     "volume": minute_history["volume"][-5:].tolist(),
                 }
-
                 return (
                     True,
                     {
@@ -218,12 +244,8 @@ class VWAPShort(Strategy):
             and last_used_strategy[symbol].name == self.name
             and not open_orders.get(symbol)
         ):
-            day_start = ts(config.market_open)
-            day_start_index = minute_history["close"].index.get_loc(
-                day_start, method="nearest"
-            )
-            close = (
-                minute_history["close"][day_start_index:-1]
+            close_5min = (
+                minute_history["close"]
                 .dropna()
                 .between_time("9:30", "16:00")
                 .resample("5min")
@@ -232,19 +254,51 @@ class VWAPShort(Strategy):
             to_sell: bool = False
             reason: str = ""
 
-            if data.close >= stop_prices[symbol]:
+            macds = MACD(close_5min, 13, 21)
+            macd = macds[0].round(2)
+            macd_signal = macds[1].round(2)
+            macd_hist = macds[2].round(2)
+            close_5min = close_5min.round(2)
+            movement = (
+                data.close - latest_cost_basis[symbol]
+            ) / latest_cost_basis[symbol]
+            if (
+                data.close >= stop_prices[symbol]
+                and macd[-1] > macd_signal[-1]
+            ):
                 to_sell = True
                 reason = "stopped"
             elif data.close <= target_prices[symbol]:
                 to_sell = True
                 reason = "target reached"
-            elif close[-1] > close[-2] > close[-3] < close[-4]:
+            elif (
+                close_5min[-1]
+                > close_5min[-2]
+                > close_5min[-3]
+                < close_5min[-4]
+                and data.close < latest_cost_basis[symbol]
+            ):
                 to_sell = True
                 reason = "reversing direction"
+            elif macd[-1] > macd_signal[-1]:
+                to_sell = True
+                reason = "MACD changing trend"
+            elif (
+                0
+                > macd_hist[-4]
+                > macd_hist[-3]
+                < macd_hist[-2]
+                < macd_hist[-1]
+                < 0
+                and data.close < latest_cost_basis[symbol]
+            ):
+                to_sell = True
+                reason = "MACD histogram trend reversal"
 
             if to_sell:
                 buy_indicators[symbol] = {
-                    "close_5m": close[-5:].tolist(),
+                    "close_5m": close_5min[-5:].tolist(),
+                    "movement": movement,
                     "reason": reason,
                 }
 
