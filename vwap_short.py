@@ -324,8 +324,8 @@ class VWAPShort(Strategy):
                 reason = "MACD histogram trend reversal"
             elif (
                 len(a_vwap) > 10
-                and minute_history[-1].close > a_vwap[-2]
-                and minute_history[-2].close > a_vwap[-2]
+                and minute_history.close[-1] > a_vwap[-2]
+                and minute_history.close[-2] > a_vwap[-2]
             ):
                 slope_min, intercept_min, _, _, _ = linregress(
                     range(10), minute_history.close[-10:]
