@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 
 import alpaca_trade_api as tradeapi
-import numpy as np
 from liualgotrader.common import config
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators,
@@ -11,19 +10,21 @@ from liualgotrader.common.trading_data import (buy_indicators,
                                                latest_cost_basis, open_orders,
                                                sell_indicators, stop_prices,
                                                target_prices)
-from liualgotrader.fincalcs.vwap import add_daily_vwap
+from liualgotrader.fincalcs.support_resistance import (StopRangeType,
+                                                       find_supports)
+from liualgotrader.fincalcs.vwap import add_daily_vwap, anchored_vwap
 from liualgotrader.strategies.base import Strategy, StrategyType
 from pandas import DataFrame as df
-from pandas import Timestamp as ts
 from pandas import concat
-from scipy import stats
+from scipy.stats import linregress, norm
 from tabulate import tabulate
-from talib import BBANDS, MACD, RSI
+from talib import MACD
 
 
 class VWAPShort(Strategy):
     name = "vwap_short"
     was_above_vwap: Dict = {}
+    volume_test_time: Dict = {}
 
     def __init__(
         self,
@@ -170,18 +171,31 @@ class VWAPShort(Strategy):
                 < minute_history["close"][-2]
                 < minute_history["close"][-3]
             ):
+                stops = find_supports(
+                    data.close, minute_history, now, StopRangeType.LAST_2_HOURS
+                )
+
+                if stops:
+                    tlog(
+                        f"[self.name]:{symbol}@{data.close} potential short-trap {stops}"
+                    )
+                    return False, {}
+
                 tlog(
                     f"\n{tabulate(df[-10:], headers='keys', tablefmt='psql')}"
                 )
 
-                stop_price = (vwap_series[-1] + data.close) / 2
-                target_price = min(
-                    data.close - 10 * (stop_price - data.close),
-                    data.close * 0.98,
+                stop_price = vwap_series[-1] * 1.005
+                target_price = round(
+                    min(
+                        data.close - 10 * (stop_price - data.close),
+                        data.close * 0.98,
+                    ),
+                    2,
                 )
 
-                stop_prices[symbol] = stop_price
-                target_prices[symbol] = target_price
+                stop_prices[symbol] = round(stop_price, 2)
+                target_prices[symbol] = round(target_price, 2)
 
                 if portfolio_value is None:
                     if trading_api:
@@ -209,11 +223,13 @@ class VWAPShort(Strategy):
                             f"{self.name}: both portfolio_value and trading_api can't be None"
                         )
 
-                shares_to_buy = max(
-                    portfolio_value
-                    * config.risk
-                    // (data.close - stop_prices[symbol]),
-                    -portfolio_value * 0.02 // data.close,
+                shares_to_buy = int(
+                    max(
+                        portfolio_value
+                        * config.risk
+                        // (data.close - stop_prices[symbol]),
+                        -portfolio_value * 0.02 // data.close,
+                    )
                 )
                 if not shares_to_buy:
                     shares_to_buy = 1
@@ -228,7 +244,9 @@ class VWAPShort(Strategy):
                     "vwap": data.vwap,
                     "avg": data.average,
                     "volume": minute_history["volume"][-5:].tolist(),
+                    "stops": [] if not stops else stops.tolist(),
                 }
+                self.volume_test_time[symbol] = now
                 return (
                     True,
                     {
@@ -244,6 +262,13 @@ class VWAPShort(Strategy):
             and last_used_strategy[symbol].name == self.name
             and not open_orders.get(symbol)
         ):
+            volume = minute_history["volume"][
+                self.volume_test_time[symbol] :
+            ].dropna()
+            mu, std = norm.fit(volume)
+            a_vwap = anchored_vwap(
+                minute_history, self.volume_test_time[symbol]
+            )
             close_5min = (
                 minute_history["close"]
                 .dropna()
@@ -280,7 +305,10 @@ class VWAPShort(Strategy):
             ):
                 to_sell = True
                 reason = "reversing direction"
-            elif macd[-1] > macd_signal[-1]:
+            elif (
+                macd[-1] > macd_signal[-1]
+                and data.close < latest_cost_basis[symbol]
+            ):
                 to_sell = True
                 reason = "MACD changing trend"
             elif (
@@ -294,12 +322,33 @@ class VWAPShort(Strategy):
             ):
                 to_sell = True
                 reason = "MACD histogram trend reversal"
+            elif (
+                len(a_vwap) > 10
+                and minute_history[-1].close > a_vwap[-2]
+                and minute_history[-2].close > a_vwap[-2]
+            ):
+                slope_min, intercept_min, _, _, _ = linregress(
+                    range(10), minute_history.close[-10:]
+                )
+                slope_a_vwap, intercept_a_vwap, _, _, _ = linregress(
+                    range(10), a_vwap[-10:]
+                )
+
+                if round(slope_min, 2) > round(slope_a_vwap, 2):
+                    to_sell = True
+                    reason = f"deviate from anchored-vwap {round(slope_min, 2)}>{round(slope_a_vwap, 2)}"
+
+            # elif data.volume > mu + 2 * std and data.close > data.open and data.vwap > data.open:
+            #    to_sell = True
+            #    reason = "suspicious spike in volume, may be short-trap"
 
             if to_sell:
                 buy_indicators[symbol] = {
                     "close_5m": close_5min[-5:].tolist(),
                     "movement": movement,
                     "reason": reason,
+                    "volume": minute_history.volume[-5:].tolist(),
+                    "volume fit": (mu, std),
                 }
 
                 tlog(
