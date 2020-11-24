@@ -10,8 +10,7 @@ from liualgotrader.common.trading_data import (buy_indicators,
                                                latest_cost_basis, open_orders,
                                                sell_indicators, stop_prices,
                                                target_prices)
-from liualgotrader.fincalcs.support_resistance import (StopRangeType,
-                                                       find_supports)
+from liualgotrader.fincalcs.trends import SeriesTrendType, get_series_trend
 from liualgotrader.fincalcs.vwap import add_daily_vwap, anchored_vwap
 from liualgotrader.strategies.base import Strategy, StrategyType
 from pandas import DataFrame as df
@@ -21,10 +20,12 @@ from tabulate import tabulate
 from talib import MACD
 
 
-class VWAPShort(Strategy):
-    name = "vwap_short"
+class ShortTrapBuster(Strategy):
+    name = "short_trap_buster"
     was_above_vwap: Dict = {}
     volume_test_time: Dict = {}
+    potential_trap: Dict = {}
+    trap_start_time: Dict = {}
 
     def __init__(
         self,
@@ -68,7 +69,6 @@ class VWAPShort(Strategy):
             return False, {}
 
         data = minute_history.iloc[-1]
-
         if data.close > data.average:
             self.was_above_vwap[symbol] = True
 
@@ -76,12 +76,8 @@ class VWAPShort(Strategy):
             await super().is_buy_time(now)
             and not position
             and not open_orders.get(symbol, None)
+            and self.was_above_vwap.get(symbol, False)
         ):
-            if data.open > data.average:
-                if debug:
-                    tlog(f"{self.name} {symbol} trending up: {data}")
-                return False, {}
-
             lbound = config.market_open.replace(second=0, microsecond=0)
             close = (
                 minute_history["close"][lbound:]
@@ -155,8 +151,9 @@ class VWAPShort(Strategy):
             macd_hist = macds[2].round(3)
             vwap_series = vwap_series.round(3)
             close = close.round(3)
+            to_buy = False
             if (
-                self.was_above_vwap.get(symbol, False)
+                not self.potential_trap.get(symbol, False)
                 and close[-1] < vwap_series[-1]
                 and close[-2] < vwap_series[-2]
                 and close[-3] < vwap_series[-3]
@@ -164,36 +161,35 @@ class VWAPShort(Strategy):
                 and close[-2] < open[-2]
                 and close[-3] < open[-3]
                 and macd[-1] < macd_signal[-1] < 0
-                # and macd[-1] < 0
+                and macd[-1] < 0
                 and macd_hist[-1] < macd_hist[-2] < macd_hist[-3] < 0
                 and data.close < data.open
                 and data.close
                 < minute_history["close"][-2]
                 < minute_history["close"][-3]
             ):
-                stops = find_supports(
-                    data.close, minute_history, now, StopRangeType.LAST_2_HOURS
+                self.potential_trap[symbol] = True
+                self.trap_start_time[symbol] = now
+                tlog(f"[self.name]:{symbol}@{data.close} potential short-trap")
+                return False, {}
+            elif self.potential_trap.get(symbol, False):
+                a_vwap = anchored_vwap(
+                    minute_history, self.trap_start_time[symbol]
                 )
+                if (
+                    len(a_vwap) > 10
+                    and minute_history.close[-1] > a_vwap[-2]
+                    and minute_history.close[-2] > a_vwap[-2]
+                ):
+                    slope_min, _ = get_series_trend(minute_history.close[-10:])
+                    slope_a_vwap, _ = get_series_trend(a_vwap[-10:])
 
-                if stops:
-                    tlog(
-                        f"[self.name]:{symbol}@{data.close} potential short-trap {stops}"
-                    )
-                    return False, {}
+                    if slope_min > slope_a_vwap:
+                        to_buy = True
 
-                tlog(
-                    f"\n{tabulate(df[-10:], headers='keys', tablefmt='psql')}"
-                )
-
-                stop_price = vwap_series[-1] * 1.005
-                target_price = round(
-                    min(
-                        data.close - 10 * (stop_price - data.close),
-                        data.close * 0.98,
-                    ),
-                    2,
-                )
-
+            if to_buy:
+                stop_price = vwap_series[-1] * 0.98
+                target_price = stop_price * 1.1
                 stop_prices[symbol] = round(stop_price, 2)
                 target_prices[symbol] = round(target_price, 2)
 
@@ -223,36 +219,29 @@ class VWAPShort(Strategy):
                             f"{self.name}: both portfolio_value and trading_api can't be None"
                         )
 
-                shares_to_buy = int(
-                    max(
-                        portfolio_value
-                        * config.risk
-                        // (data.close - stop_prices[symbol]),
-                        -portfolio_value * 0.02 // data.close,
-                    )
-                )
+                shares_to_buy = int(portfolio_value * 0.02 / data.close)
                 if not shares_to_buy:
                     shares_to_buy = 1
 
                 buy_price = data.close
                 tlog(
-                    f"[{self.name}][{now}] Submitting buy short for {-shares_to_buy} shares of {symbol} at {buy_price} target {target_prices[symbol]} stop {stop_prices[symbol]}"
+                    f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {buy_price} target {target_prices[symbol]} stop {stop_prices[symbol]}"
                 )
-                sell_indicators[symbol] = {
+                buy_indicators[symbol] = {
                     "vwap_series": vwap_series[-5:].tolist(),
+                    "a_vwap_series": a_vwap[-5:].tolist(),
                     "5-min-close": close[-5:].tolist(),
                     "vwap": data.vwap,
                     "avg": data.average,
                     "volume": minute_history["volume"][-5:].tolist(),
-                    "stops": [] if not stops else stops.tolist(),
                 }
-                self.volume_test_time[symbol] = now
                 return (
                     True,
                     {
-                        "side": "sell",
-                        "qty": str(-shares_to_buy),
-                        "type": "market",
+                        "side": "buy",
+                        "qty": str(shares_to_buy),
+                        "type": "limit",
+                        "limit_price": str(buy_price),
                     },
                 )
 
@@ -262,103 +251,30 @@ class VWAPShort(Strategy):
             and last_used_strategy[symbol].name == self.name
             and not open_orders.get(symbol)
         ):
-            volume = minute_history["volume"][
-                self.volume_test_time[symbol] :
-            ].dropna()
-            mu, std = norm.fit(volume)
-            a_vwap = anchored_vwap(
-                minute_history, self.volume_test_time[symbol]
-            )
-            close_5min = (
-                minute_history["close"]
-                .dropna()
-                .between_time("9:30", "16:00")
-                .resample("5min")
-                .last()
-            ).dropna()
-            to_sell: bool = False
-            reason: str = ""
-
-            macds = MACD(close_5min, 13, 21)
-            macd = macds[0].round(2)
-            macd_signal = macds[1].round(2)
-            macd_hist = macds[2].round(2)
-            close_5min = close_5min.round(2)
-            movement = (
-                data.close - latest_cost_basis[symbol]
-            ) / latest_cost_basis[symbol]
-            if (
-                data.close >= stop_prices[symbol]
-                and macd[-1] > macd_signal[-1]
-            ):
+            sell_reasons = []
+            to_sell = False
+            if data.close <= stop_prices[symbol]:
                 to_sell = True
-                reason = "stopped"
-            elif data.close <= target_prices[symbol]:
+                sell_reasons.append("stopped")
+            elif data.close >= target_prices[symbol]:
                 to_sell = True
-                reason = "target reached"
-            elif (
-                close_5min[-1]
-                > close_5min[-2]
-                > close_5min[-3]
-                < close_5min[-4]
-                and data.close < latest_cost_basis[symbol]
-            ):
-                to_sell = True
-                reason = "reversing direction"
-            elif (
-                macd[-1] > macd_signal[-1]
-                and data.close < latest_cost_basis[symbol]
-            ):
-                to_sell = True
-                reason = "MACD changing trend"
-            elif (
-                0
-                > macd_hist[-4]
-                > macd_hist[-3]
-                < macd_hist[-2]
-                < macd_hist[-1]
-                < 0
-                and data.close < latest_cost_basis[symbol]
-            ):
-                to_sell = True
-                reason = "MACD histogram trend reversal"
-            elif (
-                len(a_vwap) > 10
-                and minute_history.close[-1] > a_vwap[-2]
-                and minute_history.close[-2] > a_vwap[-2]
-            ):
-                slope_min, intercept_min, _, _, _ = linregress(
-                    range(10), minute_history.close[-10:]
-                )
-                slope_a_vwap, intercept_a_vwap, _, _, _ = linregress(
-                    range(10), a_vwap[-10:]
-                )
-
-                if round(slope_min, 2) > round(slope_a_vwap, 2):
-                    to_sell = True
-                    reason = f"deviate from anchored-vwap {round(slope_min, 2)}>{round(slope_a_vwap, 2)}"
-
-            # elif data.volume > mu + 2 * std and data.close > data.open and data.vwap > data.open:
-            #    to_sell = True
-            #    reason = "suspicious spike in volume, may be short-trap"
+                sell_reasons.append("above target")
 
             if to_sell:
-                buy_indicators[symbol] = {
-                    "close_5m": close_5min[-5:].tolist(),
-                    "movement": movement,
-                    "reason": reason,
-                    "volume": minute_history.volume[-5:].tolist(),
-                    "volume fit": (mu, std),
+                sell_indicators[symbol] = {
+                    "vwap": data.vwap,
+                    "avg": data.average,
+                    "reasons": sell_reasons,
                 }
 
                 tlog(
-                    f"[{self.name}][{now}] Submitting sell short for {position} shares of {symbol} at market {data.close} with reason:{reason}"
+                    f"[{self.name}][{now}] Submitting sell for {position} shares of {symbol} at market with reason:{sell_reasons}"
                 )
                 return (
                     True,
                     {
-                        "side": "buy",
-                        "qty": str(-position),
+                        "side": "sell",
+                        "qty": str(position),
                         "type": "market",
                     },
                 )
