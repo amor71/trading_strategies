@@ -170,7 +170,9 @@ class ShortTrapBuster(Strategy):
             ):
                 self.potential_trap[symbol] = True
                 self.trap_start_time[symbol] = now
-                tlog(f"[self.name]:{symbol}@{data.close} potential short-trap")
+                tlog(
+                    f"[self.name]:{symbol}@{now} potential short-trap {data.close}"
+                )
                 return False, {}
             elif self.potential_trap.get(symbol, False):
                 a_vwap = anchored_vwap(
@@ -178,14 +180,21 @@ class ShortTrapBuster(Strategy):
                 )
                 if (
                     len(a_vwap) > 10
-                    and minute_history.close[-1] > a_vwap[-2]
+                    and minute_history.close[-1] > a_vwap[-1]
                     and minute_history.close[-2] > a_vwap[-2]
                 ):
+                    tlog(
+                        f"[self.name]:{symbol}@{now} crossed above anchored-vwap {data.close}"
+                    )
                     slope_min, _ = get_series_trend(minute_history.close[-10:])
                     slope_a_vwap, _ = get_series_trend(a_vwap[-10:])
 
                     if slope_min > slope_a_vwap:
                         to_buy = True
+                    else:
+                        tlog(
+                            f"[self.name]:{symbol}@{now} anchored-vwap slope {slope_a_vwap} below symbol {slope_min}"
+                        )
 
             if to_buy:
                 stop_price = vwap_series[-1] * 0.98
