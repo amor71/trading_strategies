@@ -291,7 +291,7 @@ class ShortTrapBuster(Strategy):
             elif data.close >= target_prices[symbol]:
                 to_sell = True
                 sell_reasons.append("above target")
-            elif rsi[-1] > 79:
+            elif rsi[-1] > 78 and data.close > latest_cost_basis[symbol]:
                 to_sell = True
                 sell_reasons.append("RSI maxed")
             elif round(data.close, 2) >= round(data.average, 2):
