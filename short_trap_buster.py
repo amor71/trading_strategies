@@ -17,7 +17,7 @@ from pandas import DataFrame as df
 from pandas import concat
 from scipy.stats import linregress, norm
 from tabulate import tabulate
-from talib import MACD
+from talib import MACD, RSI
 
 
 class ShortTrapBuster(Strategy):
@@ -26,6 +26,7 @@ class ShortTrapBuster(Strategy):
     volume_test_time: Dict = {}
     potential_trap: Dict = {}
     trap_start_time: Dict = {}
+    traded: Dict = {}
 
     def __init__(
         self,
@@ -44,10 +45,11 @@ class ShortTrapBuster(Strategy):
         )
 
     async def buy_callback(self, symbol: str, price: float, qty: int) -> None:
-        pass
+        latest_cost_basis[symbol] = price
+        self.traded[symbol] = True
 
     async def sell_callback(self, symbol: str, price: float, qty: int) -> None:
-        latest_cost_basis[symbol] = price
+        pass
 
     async def create(self) -> None:
         await super().create()
@@ -77,8 +79,19 @@ class ShortTrapBuster(Strategy):
             and not position
             and not open_orders.get(symbol, None)
             and self.was_above_vwap.get(symbol, False)
+            and not self.traded.get(symbol, False)
         ):
+            # Check for buy signals
             lbound = config.market_open.replace(second=0, microsecond=0)
+            ubound = lbound + timedelta(minutes=2)
+            try:
+                high_2m = minute_history[lbound:ubound]["close"].max()  # type: ignore
+            except Exception as e:
+                tlog(
+                    f"{symbol}[{now}] failed to aggregate {lbound}:{ubound} {minute_history}"
+                )
+                return False, {}
+
             close = (
                 minute_history["close"][lbound:]
                 .dropna()
@@ -168,6 +181,9 @@ class ShortTrapBuster(Strategy):
                 < minute_history["close"][-2]
                 < minute_history["close"][-3]
             ):
+                # if data.close < high_2m:
+                #    return False, {}
+
                 self.potential_trap[symbol] = True
                 self.trap_start_time[symbol] = now
                 tlog(
@@ -190,69 +206,71 @@ class ShortTrapBuster(Strategy):
                     slope_a_vwap, _ = get_series_trend(a_vwap[-10:])
 
                     if slope_min > slope_a_vwap:
-                        to_buy = True
+                        tlog(
+                            f"[self.name]:{symbol}@{now} symbol slop {slope_min} above anchored-vwap slope {slope_a_vwap}"
+                        )
                     else:
                         tlog(
                             f"[self.name]:{symbol}@{now} anchored-vwap slope {slope_a_vwap} below symbol {slope_min}"
                         )
+                        return False, {}
 
-            if to_buy:
-                stop_price = vwap_series[-1] * 0.98
-                target_price = stop_price * 1.1
-                stop_prices[symbol] = round(stop_price, 2)
-                target_prices[symbol] = round(target_price, 2)
+                    stop_price = a_vwap[-1] * 0.99
+                    target_price = stop_price * 1.1
+                    stop_prices[symbol] = round(stop_price, 2)
+                    target_prices[symbol] = round(target_price, 2)
 
-                if portfolio_value is None:
-                    if trading_api:
-                        retry = 3
-                        while retry > 0:
-                            try:
-                                portfolio_value = float(
-                                    trading_api.get_account().portfolio_value
-                                )
-                                break
-                            except ConnectionError as e:
+                    if portfolio_value is None:
+                        if trading_api:
+                            retry = 3
+                            while retry > 0:
+                                try:
+                                    portfolio_value = float(
+                                        trading_api.get_account().portfolio_value
+                                    )
+                                    break
+                                except ConnectionError as e:
+                                    tlog(
+                                        f"[{symbol}][{now}[Error] get_account() failed w/ {e}, retrying {retry} more times"
+                                    )
+                                    await asyncio.sleep(0)
+                                    retry -= 1
+
+                            if not portfolio_value:
                                 tlog(
-                                    f"[{symbol}][{now}[Error] get_account() failed w/ {e}, retrying {retry} more times"
+                                    "f[{symbol}][{now}[Error] failed to get portfolio_value"
                                 )
-                                await asyncio.sleep(0)
-                                retry -= 1
-
-                        if not portfolio_value:
-                            tlog(
-                                "f[{symbol}][{now}[Error] failed to get portfolio_value"
+                                return False, {}
+                        else:
+                            raise Exception(
+                                f"{self.name}: both portfolio_value and trading_api can't be None"
                             )
-                            return False, {}
-                    else:
-                        raise Exception(
-                            f"{self.name}: both portfolio_value and trading_api can't be None"
-                        )
 
-                shares_to_buy = int(portfolio_value * 0.02 / data.close)
-                if not shares_to_buy:
-                    shares_to_buy = 1
+                    shares_to_buy = int(portfolio_value * 0.02 / data.close)
+                    if not shares_to_buy:
+                        shares_to_buy = 1
 
-                buy_price = data.close
-                tlog(
-                    f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {buy_price} target {target_prices[symbol]} stop {stop_prices[symbol]}"
-                )
-                buy_indicators[symbol] = {
-                    "vwap_series": vwap_series[-5:].tolist(),
-                    "a_vwap_series": a_vwap[-5:].tolist(),
-                    "5-min-close": close[-5:].tolist(),
-                    "vwap": data.vwap,
-                    "avg": data.average,
-                    "volume": minute_history["volume"][-5:].tolist(),
-                }
-                return (
-                    True,
-                    {
-                        "side": "buy",
-                        "qty": str(shares_to_buy),
-                        "type": "limit",
-                        "limit_price": str(buy_price),
-                    },
-                )
+                    buy_price = data.close
+                    tlog(
+                        f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {buy_price} target {target_prices[symbol]} stop {stop_prices[symbol]}"
+                    )
+                    buy_indicators[symbol] = {
+                        "vwap_series": vwap_series[-5:].tolist(),
+                        "a_vwap_series": a_vwap[-5:].tolist(),
+                        "5-min-close": close[-5:].tolist(),
+                        "vwap": data.vwap,
+                        "avg": data.average,
+                        "volume": minute_history["volume"][-5:].tolist(),
+                    }
+                    return (
+                        True,
+                        {
+                            "side": "buy",
+                            "qty": str(shares_to_buy),
+                            "type": "limit",
+                            "limit_price": str(buy_price),
+                        },
+                    )
 
         if (
             await super().is_sell_time(now)
@@ -260,6 +278,11 @@ class ShortTrapBuster(Strategy):
             and last_used_strategy[symbol].name == self.name
             and not open_orders.get(symbol)
         ):
+            rsi = RSI(
+                minute_history["close"].dropna().between_time("9:30", "16:00"),
+                14,
+            )
+
             sell_reasons = []
             to_sell = False
             if data.close <= stop_prices[symbol]:
@@ -268,6 +291,12 @@ class ShortTrapBuster(Strategy):
             elif data.close >= target_prices[symbol]:
                 to_sell = True
                 sell_reasons.append("above target")
+            elif rsi[-1] > 79:
+                to_sell = True
+                sell_reasons.append("RSI maxed")
+            elif round(data.close, 2) >= round(data.average, 2):
+                to_sell = True
+                sell_reasons.append("crossed vwap")
 
             if to_sell:
                 sell_indicators[symbol] = {
