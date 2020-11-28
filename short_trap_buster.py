@@ -15,7 +15,6 @@ from liualgotrader.fincalcs.vwap import add_daily_vwap, anchored_vwap
 from liualgotrader.strategies.base import Strategy, StrategyType
 from pandas import DataFrame as df
 from pandas import concat
-from scipy.stats import linregress, norm
 from tabulate import tabulate
 from talib import MACD, RSI
 
@@ -27,6 +26,7 @@ class ShortTrapBuster(Strategy):
     potential_trap: Dict = {}
     trap_start_time: Dict = {}
     traded: Dict = {}
+    buy_time: Dict = {}
 
     def __init__(
         self,
@@ -83,14 +83,6 @@ class ShortTrapBuster(Strategy):
         ):
             # Check for buy signals
             lbound = config.market_open.replace(second=0, microsecond=0)
-            ubound = lbound + timedelta(minutes=2)
-            try:
-                high_2m = minute_history[lbound:ubound]["close"].max()  # type: ignore
-            except Exception as e:
-                tlog(
-                    f"{symbol}[{now}] failed to aggregate {lbound}:{ubound} {minute_history}"
-                )
-                return False, {}
 
             close = (
                 minute_history["close"][lbound:]
@@ -177,7 +169,8 @@ class ShortTrapBuster(Strategy):
                 and macd[-1] < 0
                 and macd_hist[-1] < macd_hist[-2] < macd_hist[-3] < 0
                 and data.close < data.open
-                and data.close
+                and minute_history["close"][lbound]
+                < data.close
                 < minute_history["close"][-2]
                 < minute_history["close"][-3]
             ):
@@ -215,7 +208,7 @@ class ShortTrapBuster(Strategy):
                         )
                         return False, {}
 
-                    stop_price = a_vwap[-1] * 0.99
+                    stop_price = a_vwap[-1] * 0.98
                     target_price = stop_price * 1.1
                     stop_prices[symbol] = round(stop_price, 2)
                     target_prices[symbol] = round(target_price, 2)
@@ -262,6 +255,7 @@ class ShortTrapBuster(Strategy):
                         "avg": data.average,
                         "volume": minute_history["volume"][-5:].tolist(),
                     }
+                    self.buy_time[symbol] = now
                     return (
                         True,
                         {
@@ -282,7 +276,7 @@ class ShortTrapBuster(Strategy):
                 minute_history["close"].dropna().between_time("9:30", "16:00"),
                 14,
             )
-
+            a_vwap = anchored_vwap(minute_history, self.buy_time[symbol])
             sell_reasons = []
             to_sell = False
             if data.close <= stop_prices[symbol]:
@@ -296,7 +290,10 @@ class ShortTrapBuster(Strategy):
                 sell_reasons.append("RSI maxed")
             elif round(data.close, 2) >= round(data.average, 2):
                 to_sell = True
-                sell_reasons.append("crossed vwap")
+                sell_reasons.append("crossed above vwap")
+            elif round(data.close, 2) < a_vwap[-1] * 0.99:
+                to_sell = True
+                sell_reasons.append("crossed below a-vwap")
 
             if to_sell:
                 sell_indicators[symbol] = {
