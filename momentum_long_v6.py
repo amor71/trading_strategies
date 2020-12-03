@@ -164,13 +164,18 @@ class MomentumLongV6(Strategy):
                 if macd[-1] > 0 >= macd[-2] and macd_trending:
                     macd2 = MACD(close, 40, 60)[0]
                     if macd2[-1] >= 0 and np.diff(macd2)[-1] >= 0:
-                        to_buy = True
-                        reason.append("MACD zero-cross")
+                        if (
+                            macd_hist_trending
+                            and macd_hist[-3] <= 0 < macd_hist[-2]
+                            and macd[-1] < daiy_max_macd
+                        ):
+                            to_buy = True
+                            reason.append("MACD zero-cross")
 
-                        if debug:
-                            tlog(
-                                f"[{self.name}][{now}] slow macd confirmed trend"
-                            )
+                            if debug:
+                                tlog(
+                                    f"[{self.name}][{now}] slow macd confirmed trend"
+                                )
 
                 if to_buy:
                     # check RSI does not indicate overbought
@@ -255,6 +260,7 @@ class MomentumLongV6(Strategy):
                             "vwap": data.vwap,
                             "avg": data.average,
                             "reason": reason,
+                            "rsi": rsi[-5:].tolist(),
                         }
                         self.top_up[symbol] = now
                         return (
@@ -347,6 +353,7 @@ class MomentumLongV6(Strategy):
                     "vwap": data.vwap,
                     "avg": data.average,
                     "reason": reason,
+                    "rsi": rsi[-5:].tolist(),
                 }
 
                 return (
