@@ -289,7 +289,7 @@ class ShortTrapBuster(Strategy):
                 to_sell = True
                 sell_reasons.append("RSI maxed")
             elif round(data.close, 2) >= round(data.average, 2):
-                to_sell = True
+                # to_sell = True
                 sell_reasons.append("crossed above vwap")
             elif round(data.close, 2) < a_vwap[-1] * 0.99:
                 to_sell = True
