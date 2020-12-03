@@ -207,6 +207,11 @@ class MomentumLongV6(Strategy):
                         minute_history,
                         now,
                     )
+                    stop_price = (
+                        stop_price - max(0.05, data.close * 0.02)
+                        if stop_price
+                        else data.close * config.default_stop
+                    )
                     target_price = 3 * (data.close - stop_price) + data.close
                     target_prices[symbol] = target_price
                     stop_prices[symbol] = stop_price
@@ -462,7 +467,9 @@ class MomentumLongV6(Strategy):
             elif data.close >= target_prices[symbol] and macd[-1] <= 0:
                 to_sell = True
                 sell_reasons.append("above target & macd negative")
-            elif rsi[-1] >= rsi_limit:
+            elif (
+                rsi[-1] >= rsi_limit and data.close > latest_cost_basis[symbol]
+            ):
                 to_sell = True
                 sell_reasons.append("rsi max, cool-down for 5 minutes")
                 cool_down[symbol] = now.replace(
