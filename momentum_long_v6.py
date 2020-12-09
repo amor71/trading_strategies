@@ -415,7 +415,7 @@ class MomentumLongV6(Strategy):
             macd_signal_val = macd_signal[-1]
 
             round_factor = (
-                2 if macd_val >= 0.1 or macd_signal_val >= 0.1 else 3
+                2 if macd_val >= 0.01 or macd_signal_val >= 0.01 else 3
             )
             scalp_threshold = (
                 target_prices[symbol] + latest_scalp_basis[symbol]
