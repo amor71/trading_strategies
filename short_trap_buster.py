@@ -254,6 +254,8 @@ class ShortTrapBuster(Strategy):
                         "vwap": data.vwap,
                         "avg": data.average,
                         "volume": minute_history["volume"][-5:].tolist(),
+                        "slope_min": slope_min,
+                        "slope_a_vwap": slope_a_vwap,
                     }
                     self.buy_time[symbol] = now
                     return (
@@ -285,13 +287,13 @@ class ShortTrapBuster(Strategy):
             elif data.close >= target_prices[symbol]:
                 to_sell = True
                 sell_reasons.append("above target")
-            elif rsi[-1] > 78 and data.close > latest_cost_basis[symbol]:
+            elif rsi[-1] > 79 and data.close > latest_cost_basis[symbol]:
                 to_sell = True
                 sell_reasons.append("RSI maxed")
-            elif round(data.close, 2) >= round(data.average, 2):
+            elif round(data.vwap, 2) >= round(data.average, 2):
                 # to_sell = True
                 sell_reasons.append("crossed above vwap")
-            elif round(data.close, 2) < a_vwap[-1] * 0.99:
+            elif round(data.vwap, 2) < a_vwap[-1] * 0.99:
                 to_sell = True
                 sell_reasons.append("crossed below a-vwap")
 
@@ -300,6 +302,8 @@ class ShortTrapBuster(Strategy):
                     "vwap": data.vwap,
                     "avg": data.average,
                     "reasons": sell_reasons,
+                    "rsi": rsi[-5:].round(2).tolist(),
+                    "a_vwap": a_vwap[-5:].round(2).tolist(),
                 }
 
                 tlog(
