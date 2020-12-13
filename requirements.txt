@@ -3,11 +3,11 @@ pylint==2.6.0
 flake8==3.8.4
 Cython==0.29.21
 alpaca-trade-api==0.49.1
-google-cloud-logging==1.15.1
+google-cloud-logging==2.0.1
 therapist==2.1.0
-liualgotrader
-setuptools==50.3.2
-wheel==0.35.1
+liualgotrader==0.0.77
+setuptools==51.0.0
+wheel==0.36.1
 twine==3.2.0
-bandit==1.6.2
-scipy
+bandit==1.6.3
+scipy==1.5.4
