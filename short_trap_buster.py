@@ -256,6 +256,12 @@ class ShortTrapBuster(Strategy):
                         "volume": minute_history["volume"][-5:].tolist(),
                         "slope_min": slope_min,
                         "slope_a_vwap": slope_a_vwap,
+                        "volume_mean": minute_history["volume"][
+                            lbound:
+                        ].mean(),
+                        "volume_std": minute_history["volume"][lbound:].std(
+                            ddof=0,
+                        ),
                     }
                     self.buy_time[symbol] = now
                     return (
