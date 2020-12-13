@@ -198,7 +198,7 @@ class ShortTrapBuster(Strategy):
                     slope_min, _ = get_series_trend(minute_history.close[-10:])
                     slope_a_vwap, _ = get_series_trend(a_vwap[-10:])
 
-                    if slope_min > slope_a_vwap:
+                    if round(slope_min, 2) > round(slope_a_vwap, 2):
                         tlog(
                             f"[self.name]:{symbol}@{now} symbol slop {slope_min} above anchored-vwap slope {slope_a_vwap}"
                         )
@@ -208,7 +208,7 @@ class ShortTrapBuster(Strategy):
                         )
                         return False, {}
 
-                    stop_price = a_vwap[-1] * 0.98
+                    stop_price = data.close * 0.99  # a_vwap[-1] * 0.99
                     target_price = stop_price * 1.1
                     stop_prices[symbol] = round(stop_price, 2)
                     target_prices[symbol] = round(target_price, 2)
