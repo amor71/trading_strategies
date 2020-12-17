@@ -168,11 +168,11 @@ class ShortTrapBuster(Strategy):
                 and macd[-1] < macd_signal[-1] < 0
                 and macd[-1] < 0
                 and macd_hist[-1] < macd_hist[-2] < macd_hist[-3] < 0
-                and data.close < data.open
+                and minute_history["close"][-2] < minute_history["open"][-2]
                 and minute_history["close"][lbound]
-                < data.close
                 < minute_history["close"][-2]
                 < minute_history["close"][-3]
+                < minute_history["close"][-4]
             ):
                 # if data.close < high_2m:
                 #    return False, {}
@@ -180,7 +180,7 @@ class ShortTrapBuster(Strategy):
                 self.potential_trap[symbol] = True
                 self.trap_start_time[symbol] = now
                 tlog(
-                    f"[self.name]:{symbol}@{now} potential short-trap {data.close}"
+                    f"[{self.name}]:{symbol}@{now} potential short-trap {data.close}"
                 )
                 return False, {}
             elif self.potential_trap.get(symbol, False):
@@ -193,18 +193,18 @@ class ShortTrapBuster(Strategy):
                     and minute_history.close[-2] > a_vwap[-2]
                 ):
                     tlog(
-                        f"[self.name]:{symbol}@{now} crossed above anchored-vwap {data.close}"
+                        f"[{self.name}]:{symbol}@{now} crossed above anchored-vwap {data.close}"
                     )
                     slope_min, _ = get_series_trend(minute_history.close[-10:])
                     slope_a_vwap, _ = get_series_trend(a_vwap[-10:])
 
                     if round(slope_min, 2) > round(slope_a_vwap, 2):
                         tlog(
-                            f"[self.name]:{symbol}@{now} symbol slop {slope_min} above anchored-vwap slope {slope_a_vwap}"
+                            f"[{self.name}]:{symbol}@{now} symbol slop {slope_min} above anchored-vwap slope {slope_a_vwap}"
                         )
                     else:
                         tlog(
-                            f"[self.name]:{symbol}@{now} anchored-vwap slope {slope_a_vwap} below symbol {slope_min}"
+                            f"[{self.name}]:{symbol}@{now} anchored-vwap slope {slope_a_vwap} below symbol {slope_min}"
                         )
                         return False, {}
 
