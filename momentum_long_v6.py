@@ -73,7 +73,6 @@ class MomentumLongV6(Strategy):
         backtesting: bool = False,
     ) -> Tuple[bool, Dict]:
         data = minute_history.iloc[-1]
-        prev_min = minute_history.iloc[-2]
 
         morning_rush = (
             True if (now - config.market_open).seconds // 60 < 30 else False
@@ -107,18 +106,15 @@ class MomentumLongV6(Strategy):
                     .between_time("9:30", "16:00")
                 )
 
-                if not (
-                    data.vwap > data.open
-                    and data.vwap != 0.0
-                    or data.vwap == 0.0
-                    and data.close > data.open
-                ):
+                if (
+                    data.vwap < data.open and data.vwap
+                ) or data.close < data.open:
                     if debug:
                         tlog(f"[{self.name}][{now}] price action not positive")
                     return False, {}
 
                 macds = MACD(close)
-                macd = macds[0]
+                macd = macds[0].round(2)
 
                 daiy_max_macd = (
                     macd[
@@ -129,8 +125,8 @@ class MomentumLongV6(Strategy):
                     .between_time("9:30", "16:00")
                     .max()
                 )
-                macd_signal = macds[1]
-                macd_hist = macds[2]
+                macd_signal = macds[1].round(2)
+                macd_hist = macds[2].round(2)
                 macd_trending = macd[-3] < macd[-2] < macd[-1]
                 macd_above_signal = macd[-1] > macd_signal[-1]
                 macd_upper_crossover = (
