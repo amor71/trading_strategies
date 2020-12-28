@@ -92,7 +92,7 @@ class ShortTrapBusterV2(Strategy):
                 tlog(
                     f"{self.name}:{symbol} first hour volume {vol_first_hour} < 1000000. skipping"
                 )
-                return False, {}
+                return False, {"reject": True}
 
             close = (
                 minute_history["close"][lbound:]
