@@ -96,10 +96,7 @@ class MomentumLongV6(Strategy):
                 )
                 return False, {}
 
-            if data.close > high_15m or (
-                hasattr(config, "bypass_market_schedule")
-                and config.bypass_market_schedule
-            ):
+            if data.close > high_15m:
                 close = (
                     minute_history["close"]
                     .dropna()
@@ -114,7 +111,7 @@ class MomentumLongV6(Strategy):
                     return False, {}
 
                 macds = MACD(close)
-                macd = macds[0].round(2)
+                macd = macds[0].round(3)
 
                 daiy_max_macd = (
                     macd[
@@ -125,8 +122,8 @@ class MomentumLongV6(Strategy):
                     .between_time("9:30", "16:00")
                     .max()
                 )
-                macd_signal = macds[1].round(2)
-                macd_hist = macds[2].round(2)
+                macd_signal = macds[1].round(3)
+                macd_hist = macds[2].round(3)
                 macd_trending = macd[-3] < macd[-2] < macd[-1]
                 macd_above_signal = macd[-1] > macd_signal[-1]
                 macd_upper_crossover = (
@@ -157,7 +154,7 @@ class MomentumLongV6(Strategy):
                 ):
                     reason.append("MACD histogram reversal")
 
-                if macd[-1] > 0 >= macd[-2] and macd_trending:
+                if macd[-2] > 0 >= macd[-3] and macd_trending:
                     macd2 = MACD(close, 40, 60)[0]
                     if macd2[-1] >= 0 and np.diff(macd2)[-1] >= 0:
                         if (
