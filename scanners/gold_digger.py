@@ -9,7 +9,7 @@ from liualgotrader.scanners.base import Scanner
 
 class GoldDigger(Scanner):
     name = "GoldDigger"
-    golden_list = ["JNUG", "JDST"]
+    golden_list = ["JNUG"]
 
     def __init__(
         self,
@@ -26,4 +26,5 @@ class GoldDigger(Scanner):
 
     async def run(self) -> List[str]:
         tlog(f"{self.name} picked {self.golden_list}")
+
         return self.golden_list
