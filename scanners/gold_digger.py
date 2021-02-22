@@ -1,5 +1,5 @@
 """follow the gold"""
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 import alpaca_trade_api as tradeapi
@@ -24,7 +24,7 @@ class GoldDigger(Scanner):
             data_api=data_api,
         )
 
-    async def run(self) -> List[str]:
-        tlog(f"{self.name} picked {self.golden_list}")
+    async def run(self, back_time: datetime = None) -> List[str]:
+        tlog(f"{self.name}{back_time} picked {self.golden_list}")
 
         return self.golden_list
