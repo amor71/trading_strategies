@@ -73,6 +73,9 @@ class Gold(Strategy):
             else False
         )
 
+    async def is_sell_time(self, now: datetime):
+        return True
+
     async def run(
         self,
         symbol: str,
@@ -86,11 +89,11 @@ class Gold(Strategy):
         backtesting: bool = False,
     ) -> Tuple[bool, Dict]:
         current_price = (
-            minute_history.close[-1]
+            minute_history.open[-1]
             if minute_history
-            else self.dl[symbol].close[now]
+            else self.dl[symbol].open[now]
         )
-        tlog(f"1111:{now} {current_price}")
+        # tlog(f"{now} {current_price}")
         if (
             await self.is_buy_time(now)
             and not position
@@ -108,7 +111,8 @@ class Gold(Strategy):
             else:
                 self.resampled_close[symbol] = (
                     self.dl[symbol]
-                    .close[-20:now]  # type: ignore
+                    .close[now - timedelta(days=30) : now]  # type: ignore
+                    .between_time("9:30", "16:00")
                     .resample("1D")
                     .last()
                     .dropna()
@@ -135,24 +139,35 @@ class Gold(Strategy):
                     config.market_open.replace(second=0, microsecond=0)
                 ]
                 if minute_history
-                else self.dl[symbol].open[now]
+                else self.dl[symbol].open[
+                    config.market_open.replace(second=0, microsecond=0)
+                ]
             )
 
-            print(
-                f"{yesterday_close}<{yesterday_lower_band} {today_open}>{yesterday_close} {current_price} > {today_lower_band}"
-            )
             if (
                 yesterday_close < yesterday_lower_band
                 and today_open > yesterday_close
                 and current_price > today_lower_band
             ):
+                print(
+                    config.market_close.replace(second=0, microsecond=0)
+                    - timedelta(days=1),
+                    self.dl[symbol].close[
+                        config.market_close.replace(second=0, microsecond=0)
+                        - timedelta(days=1)
+                    ],
+                )
+                print(
+                    f"{now}-{yesterday_close}<{yesterday_lower_band} {today_open}>{yesterday_close} {current_price} > {today_lower_band}"
+                )
                 buy_indicators[symbol] = {
-                    "lower_band": self.bband[symbol][2][-5:].tolist(),
+                    "lower_band": self.bband[symbol][2][-2:].tolist(),
                 }
                 shares_to_buy = self.amount // current_price
                 tlog(
                     f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {current_price}"
                 )
+                tlog(f"indicators:{buy_indicators[symbol]}")
                 return (
                     True,
                     {
@@ -164,37 +179,46 @@ class Gold(Strategy):
                 )
 
         if (
-            await super().is_sell_time(now)
+            await self.is_sell_time(now)
             and position > 0
             and last_used_strategy[symbol].name == self.name
             and not open_orders.get(symbol)
         ):
-            # Calculate 7 day Bolinger Band, w 1.5 std
+            # Calculate 7 day Bolinger Band, w 1 std
             if minute_history:
                 self.resampled_close[symbol] = (
                     minute_history.close.between_time("9:30", "16:00")
                     .resample("1D")
                     .last()
                 )
+            else:
+                self.resampled_close[symbol] = (
+                    self.dl[symbol]
+                    .close[now - timedelta(days=30) : now]  # type: ignore
+                    .between_time("9:30", "16:00")
+                    .resample("1D")
+                    .last()
+                    .dropna()
+                )
             self.bband[symbol] = BBANDS(
                 self.resampled_close[symbol],
                 timeperiod=7,
-                nbdevdn=1.5,
-                nbdevup=1.5,
+                nbdevdn=1,
+                nbdevup=1,
                 matype=MA_Type.EMA,
             )
 
             # if price pops above upper-band -> sell
-            current_price = minute_history.close[-1]
             yesterday_upper_band = self.bband[symbol][0][-2]
             if current_price > yesterday_upper_band:
                 sell_indicators[symbol] = {
-                    "upper_band": self.bband[symbol][0][-5:].tolist(),
+                    "upper_band": self.bband[symbol][0][-2:].tolist(),
                 }
 
                 tlog(
                     f"[{self.name}][{now}] Submitting sell for {position} shares of {symbol} at market"
                 )
+                tlog(f"indicators:{sell_indicators[symbol]}")
                 return (
                     True,
                     {
