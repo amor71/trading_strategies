@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple
 
 import alpaca_trade_api as tradeapi
 from liualgotrader.common import config
+from liualgotrader.common.data_loader import DataLoader
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators,
                                                last_used_strategy,
@@ -20,7 +21,6 @@ from talib import MACD, RSI
 
 
 class ShortTrapBusterV2(Strategy):
-    name = "short_trap_buster_v2"
     was_above_vwap: Dict = {}
     volume_test_time: Dict = {}
     potential_trap: Dict = {}
@@ -34,13 +34,15 @@ class ShortTrapBusterV2(Strategy):
         schedule: List[Dict],
         ref_run_id: int = None,
         check_patterns: bool = False,
+        data_loader: DataLoader = None,
     ):
         self.check_patterns = check_patterns
         super().__init__(
-            name=self.name,
+            name=type(self).__name__,
             type=StrategyType.DAY_TRADE,
             batch_id=batch_id,
             ref_run_id=ref_run_id,
+            data_loader=data_loader,
             schedule=schedule,
         )
 
@@ -73,6 +75,10 @@ class ShortTrapBusterV2(Strategy):
         data = minute_history.iloc[-1]
         if data.close > data.average:
             self.was_above_vwap[symbol] = True
+            if debug:
+                tlog(
+                    f"{symbol}@{now}: {data.close}  above VWAP {data.average}"
+                )
 
         if (
             await super().is_buy_time(now)
@@ -84,9 +90,14 @@ class ShortTrapBusterV2(Strategy):
 
             # Check for buy signals
             lbound = config.market_open.replace(second=0, microsecond=0)
-            vol_first_hour = minute_history.volume[
-                lbound : lbound + timedelta(hours=1)
-            ].sum()
+            if now - lbound < timedelta(hours=1):
+                return False, {}
+
+            vol_first_hour = (
+                self.data_loader[symbol]
+                .volume[lbound : lbound + timedelta(hours=1)]
+                .sum()
+            )
 
             if vol_first_hour < 1000000:
                 tlog(
@@ -167,6 +178,7 @@ class ShortTrapBusterV2(Strategy):
             vwap_series = vwap_series.round(3)
             close = close.round(3)
             to_buy = False
+
             if (
                 not self.potential_trap.get(symbol, False)
                 and close[-1] < vwap_series[-1]
@@ -179,7 +191,7 @@ class ShortTrapBusterV2(Strategy):
                 and macd[-1] < 0
                 and macd_hist[-1] < macd_hist[-2] < macd_hist[-3] < 0
                 and minute_history["close"][-2] < minute_history["open"][-2]
-                and minute_history["close"][lbound]
+                and self.data_loader[symbol].close[lbound]
                 < minute_history["close"][-2]
                 < minute_history["close"][-3]
                 < minute_history["close"][-4]

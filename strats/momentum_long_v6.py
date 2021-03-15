@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 import alpaca_trade_api as tradeapi
 import numpy as np
 from liualgotrader.common import config
+from liualgotrader.common.data_loader import DataLoader
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators, buy_time,
                                                cool_down, last_used_strategy,
@@ -29,6 +30,7 @@ class MomentumLongV6(Strategy):
         schedule: List[Dict],
         ref_run_id: int = None,
         check_patterns: bool = False,
+        data_loader: DataLoader = None,
     ):
         self.check_patterns = check_patterns
         super().__init__(
@@ -37,6 +39,7 @@ class MomentumLongV6(Strategy):
             batch_id=batch_id,
             ref_run_id=ref_run_id,
             schedule=schedule,
+            data_loader=data_loader,
         )
 
     async def buy_callback(self, symbol: str, price: float, qty: int) -> None:
