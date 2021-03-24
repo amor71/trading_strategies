@@ -10,7 +10,7 @@ from liualgotrader.scanners.base import Scanner
 
 class GoldDigger(Scanner):
     name = "GoldDigger"
-    golden_list = ["JNUG"]
+    golden_list = ["JNUG", "AAPL", "GLD"]
 
     def __init__(
         self,

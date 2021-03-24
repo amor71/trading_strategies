@@ -16,8 +16,11 @@ from liualgotrader.fincalcs.vwap import add_daily_vwap, anchored_vwap
 from liualgotrader.strategies.base import Strategy, StrategyType
 from pandas import DataFrame as df
 from pandas import concat
+from pytz import timezone
 from tabulate import tabulate
 from talib import MACD, RSI
+
+nyc = timezone("America/New_York")
 
 
 class ShortTrapBusterV2(Strategy):
@@ -306,6 +309,9 @@ class ShortTrapBusterV2(Strategy):
                 minute_history["close"].dropna().between_time("9:30", "16:00"),
                 14,
             )
+
+            if symbol not in self.buy_time:
+                self.buy_time[symbol] = datetime.now(nyc)
             a_vwap = anchored_vwap(minute_history, self.buy_time[symbol])
             sell_reasons = []
             to_sell = False

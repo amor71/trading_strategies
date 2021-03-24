@@ -400,6 +400,8 @@ class MomentumLongV6(Strategy):
                 14,
             )
 
+            if not latest_scalp_basis[symbol]:
+                latest_scalp_basis[symbol] = latest_cost_basis[symbol] = 1.0
             movement = (
                 data.close - latest_scalp_basis[symbol]
             ) / latest_scalp_basis[symbol]
