@@ -23,6 +23,7 @@ class MomentumLongV6(Strategy):
     name = "momentum_long_v6"
     whipsawed: Dict = {}
     top_up: Dict = {}
+    max15: Dict = {}
 
     def __init__(
         self,
@@ -86,20 +87,21 @@ class MomentumLongV6(Strategy):
             and not position
             and not open_orders.get(symbol, None)
             and not await self.should_cool_down(symbol, now)
-            and data.volume > 500
         ):
+            print("here!!")
             # Check for buy signals
-            lbound = config.market_open.replace(second=0, microsecond=0)
-            ubound = lbound + timedelta(minutes=15)
-            try:
-                high_15m = minute_history[lbound:ubound]["high"].max()  # type: ignore
-            except Exception as e:
-                tlog(
-                    f"{symbol}[{now}] failed to aggregate {lbound}:{ubound} {minute_history}"
-                )
-                return False, {}
+            if symbol not in self.max15:
+                lbound = config.market_open.replace(second=0, microsecond=0)
+                ubound = lbound + timedelta(minutes=15)
+                try:
+                    self.max15[symbol] = minute_history[lbound:ubound]["high"].max()  # type: ignore
+                except Exception as e:
+                    tlog(
+                        f"{symbol}[{now}] failed to aggregate {lbound}:{ubound} {minute_history}"
+                    )
+                    return False, {}
 
-            if data.close > high_15m:
+            if data.close > self.max15[symbol]:
                 close = (
                     minute_history["close"]
                     .dropna()
