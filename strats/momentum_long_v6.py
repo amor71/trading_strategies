@@ -88,7 +88,6 @@ class MomentumLongV6(Strategy):
             and not open_orders.get(symbol, None)
             and not await self.should_cool_down(symbol, now)
         ):
-            print("here!!")
             # Check for buy signals
             if symbol not in self.max15:
                 lbound = config.market_open.replace(second=0, microsecond=0)
