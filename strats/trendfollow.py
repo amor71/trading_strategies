@@ -1,6 +1,7 @@
 import asyncio
+import sys
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import alpaca_trade_api as tradeapi
 import numpy as np
@@ -18,6 +19,9 @@ from liualgotrader.strategies.base import Strategy, StrategyType
 from pandas import DataFrame as df
 from pytz import timezone
 
+sys.path.append("..")
+from trades.common.trend import Trend as TrendLogic
+
 nyc = timezone("America/New_York")
 
 
@@ -31,12 +35,23 @@ class TrendFollow(Strategy):
         portfolio_id: str,
         portfolio_size: int,
         rebalance_rate: str,
+        stock_count: int,
+        index: str,
+        rank_days: int,
+        debug: bool,
         ref_run_id: str = None,
     ):
         self.context: str
         self.portfolio_id = portfolio_id
         self.portfolio_size = portfolio_size
         self.last_rebalance: str
+        self.trend_logic: Optional[TrendLogic] = None
+        self.index = index
+        self.stock_count = stock_count
+        self.rank_days = rank_days
+
+        self.debug = debug
+
         if rebalance_rate not in ["daily", "hourly", "weekly"]:
             raise AssertionError(
                 f"rebalance schedule can be either daily/hourly not {rebalance_rate}"
@@ -66,9 +81,17 @@ class TrendFollow(Strategy):
     async def rebalance(self, now: datetime):
         await self.set_global_var("last_rebalance", str(now), self.context)
 
-        print(
-            f"RE-BALANCING {await self.get_global_var('last_rebalance', self.context)}"
+        self.trend_logic = TrendLogic(
+            symbols=(await index_data(self.index)).Symbol.tolist(),
+            portfolio_size=self.portfolio_size,
+            stock_count=self.stock_count,
+            rank_days=self.rank_days,
+            debug=self.debug,
         )
+        print("REBALANCE", now)
+        df = await self.trend_logic.run(now)
+        print(df)
+
         return {}
 
     async def should_rebalance(self, now: datetime) -> bool:

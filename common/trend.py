@@ -28,17 +28,17 @@ class Trend:
         self,
         symbols: List[str],
         portfolio_size: int,
-        risk_factor: float,
         rank_days: int,
+        stock_count: int,
         debug=False,
     ):
         try:
             self.rank_days = rank_days
             self.debug = debug
             self.portfolio_size = portfolio_size
-            self.risk_factor = risk_factor
             self.data_loader = DataLoader(TimeScale.day)
             self.symbols = symbols
+            self.stock_count = stock_count
         except Exception:
             raise ValueError(
                 "[ERROR] Miner must receive all valid parameter(s)"
@@ -118,8 +118,10 @@ class Trend:
                 if data:
                     l.append(data)  # , ignore_index=True)
 
-        self.portfolio = df.from_records(l).sort_values(
-            by="score", ascending=False
+        self.portfolio = (
+            df.from_records(l)
+            .sort_values(by="score", ascending=False)
+            .head(self.stock_count)
         )
         tlog(
             f"Trend ranking calculation completed w/ {len(self.portfolio)} trending stocks"
@@ -128,17 +130,14 @@ class Trend:
     def apply_filters_symbol(self, symbol: str, now: datetime) -> bool:
         indicator_calculator = StockDataFrame(self.data_bars[symbol])
         sma_100 = indicator_calculator["close_100_sma"]
-        if self.data_bars[symbol].close[-1] < sma_100[-1]:
-            return False
-
-        return True
+        return self.data_bars[symbol].close[-1] >= sma_100[-1]
 
         # filter stocks moving > 15% in last 90 days
-        last = self.data_bars[symbol].close[
-            -1
-        ]  # self.data_bars[row.symbol].close[-90:].max()
-        low = self.data_bars[symbol].close[-90:].min()  # type: ignore
-        return last / low <= 1.25
+        # last = self.data_bars[symbol].close[
+        #    -1
+        # ]  # self.data_bars[row.symbol].close[-90:].max()
+        # low = self.data_bars[symbol].close[-90:].min()  # type: ignore
+        # return last / low <= 1.25
 
     async def apply_filters(self, now: datetime) -> None:
         tlog("Applying filters")
@@ -169,23 +168,41 @@ class Trend:
 
     async def calc_balance(self) -> None:
         for _, row in self.portfolio.iterrows():
-            volatility = (
+            self.portfolio.loc[
+                self.portfolio.symbol == row.symbol, "volatility"
+            ] = (
                 self.data_bars[row.symbol]
                 .close.pct_change()
                 .rolling(20)
                 .std()
                 .iloc[-1]
             )
-            qty = int(self.portfolio_size * self.risk_factor // volatility)
+
+        sum_vol = self.portfolio.volatility.sum()
+        for _, row in self.portfolio.iterrows():
             self.portfolio.loc[
                 self.portfolio.symbol == row.symbol, "volatility"
-            ] = volatility
+            ] = (
+                self.data_bars[row.symbol]
+                .close.pct_change()
+                .rolling(20)
+                .std()
+                .iloc[-1]
+            )
+            qty = int(
+                self.portfolio_size
+                * row.volatility
+                / sum_vol
+                / self.data_bars[row.symbol].close[-1]
+            )
+
             self.portfolio.loc[
                 self.portfolio.symbol == row.symbol, "qty"
             ] = qty
             self.portfolio.loc[self.portfolio.symbol == row.symbol, "est"] = (
                 qty * self.data_bars[row.symbol].close[-1]
             )
+
         self.portfolio = self.portfolio.loc[self.portfolio.qty > 0]
         self.portfolio["accumulative"] = self.portfolio.est.cumsum()
 

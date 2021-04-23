@@ -1,8 +1,11 @@
 import asyncio
 import concurrent.futures
 import sys
+import traceback
 import uuid
 from datetime import date, datetime, timedelta
+from multiprocessing import Queue
+from queue import Empty, Full
 from typing import Dict, List, Optional, Tuple
 
 import alpaca_trade_api as tradeapi
@@ -11,9 +14,13 @@ from liualgotrader.common import config
 from liualgotrader.common.data_loader import DataLoader  # type: ignore
 from liualgotrader.common.market_data import index_data
 from liualgotrader.common.tlog import tlog
-from liualgotrader.common.types import TimeScale
+from liualgotrader.common.types import QueueMapper, TimeScale
 from liualgotrader.miners.base import Miner
+from liualgotrader.models.algo_run import AlgoRun
+from liualgotrader.models.new_trades import NewTrade
 from liualgotrader.models.portfolio import Portfolio as DBPortfolio
+from liualgotrader.trading.base import Trader
+from liualgotrader.trading.trader_factory import trader_factory
 from pandas import DataFrame as df
 from pytz import timezone
 from scipy.stats import linregress
@@ -36,8 +43,8 @@ class Trend(Miner):
             self.index = data["index"]
             self.debug = debug
             self.portfolio_size = data["portfolio_size"]
-            self.risk_factor = data["risk_factor"]
             self.rank_days = int(data["rank_days"])
+            self.stock_count = int(data["stock_count"])
         except Exception:
             raise ValueError(
                 "[ERROR] Miner must receive all valid parameter(s)"
@@ -47,10 +54,15 @@ class Trend(Miner):
         if self.debug:
             tlog(f"{self.name} running in debug mode")
 
-    async def save_portfolio(self, df: df) -> str:
+    async def save_portfolio(self) -> str:
         portfolio_id = str(uuid.uuid4())
         tlog(f"Saving portfolio {portfolio_id}")
-        await DBPortfolio.save(id=portfolio_id, df=df)
+        await DBPortfolio.save(
+            portfolio_id,
+            self.portfolio_size,
+            self.stock_count,
+            {"rank_days": self.rank_days},
+        )
         tlog("Done.")
         return portfolio_id
 
@@ -58,13 +70,67 @@ class Trend(Miner):
         if self.debug:
             print(f"FINAL:\n{tabulate(df, headers='keys', tablefmt='psql')}")
 
+    async def execute_portfolio(
+        self, portfolio_id: str, df: df, now: datetime
+    ) -> None:
+        tlog("Executing portfolio buys")
+        trader = trader_factory()()
+
+        algo_run = await trader.create_session(self.name)
+        await DBPortfolio.associate_batch_id_to_profile(
+            portfolio_id, algo_run.batch_id
+        )
+
+        orders = []
+        for _, row in df.iterrows():
+            orders.append(
+                await trader.submit_order(
+                    symbol=row.symbol,
+                    qty=row.qty,
+                    side="buy",
+                    order_type="market",
+                    time_in_force="day",
+                )
+            )
+            print("saving:", row.symbol)
+
+        tlog("wait on orders")
+        open_orders = []
+        while True:
+            for order in orders:
+                (
+                    order_completed,
+                    executed_price,
+                ) = await trader.is_order_completed(order)
+                if order_completed:
+                    db_trade = NewTrade(
+                        algo_run_id=algo_run.run_id,
+                        symbol=order.symbol,
+                        qty=int(order.qty),
+                        operation="buy",
+                        price=executed_price,
+                        indicators={},
+                    )
+                    await db_trade.save(
+                        config.db_conn_pool,
+                        str(now),
+                        0.0,
+                        0.0,
+                    )
+                else:
+                    open_orders.append(order)
+            if not len(open_orders):
+                break
+            await asyncio.sleep(5.0)
+            orders = open_orders
+
     async def run(self) -> bool:
         self.trend_logic = TrendLogic(
             symbols=(await index_data(self.index)).Symbol.tolist(),
             portfolio_size=self.portfolio_size,
-            risk_factor=self.risk_factor,
             rank_days=self.rank_days,
             debug=self.debug,
+            stock_count=self.stock_count,
         )
         if self.debug:
             tlog(f"symbols: {self.trend_logic.symbols}")
@@ -72,9 +138,12 @@ class Trend(Miner):
         df = await self.trend_logic.run(
             nyc.localize(datetime.utcnow()) + timedelta(days=1)
         )
-        portfolio_id = await self.save_portfolio(df)
+        portfolio_id = await self.save_portfolio()
         await self.display_portfolio(df)
 
+        await self.execute_portfolio(
+            portfolio_id, df, nyc.localize(datetime.utcnow())
+        )
         print(
             "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
         )
