@@ -81,20 +81,17 @@ class Trend(Miner):
             portfolio_id, algo_run.batch_id
         )
 
-        orders = []
-        for _, row in df.iterrows():
-            orders.append(
-                await trader.submit_order(
-                    symbol=row.symbol,
-                    qty=row.qty,
-                    side="buy",
-                    order_type="market",
-                    time_in_force="day",
-                )
+        orders = [
+            await trader.submit_order(
+                symbol=row.symbol,
+                qty=row.qty,
+                side="buy",
+                order_type="market",
+                time_in_force="day",
             )
-            print("saving:", row.symbol)
+            for _, row in df.iterrows()
+        ]
 
-        tlog("wait on orders")
         open_orders = []
         while True:
             for order in orders:
