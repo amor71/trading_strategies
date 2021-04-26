@@ -1,5 +1,5 @@
 black==21.4b0
-pylint==2.6.0
+pylint==2.8.1
 flake8==3.8.4
 Cython==0.29.21
 alpaca-trade-api==0.52.0
