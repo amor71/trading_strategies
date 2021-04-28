@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -20,6 +21,8 @@ from pandas import DataFrame as df
 from pytz import timezone
 
 sys.path.append("..")
+from liualgotrader.models.portfolio import Portfolio
+
 from trades.common.trend import Trend as TrendLogic
 
 nyc = timezone("America/New_York")
@@ -49,7 +52,6 @@ class TrendFollow(Strategy):
         self.index = index
         self.stock_count = stock_count
         self.rank_days = rank_days
-
         self.debug = debug
 
         if rebalance_rate not in ["daily", "hourly", "weekly"]:
@@ -77,8 +79,22 @@ class TrendFollow(Strategy):
     async def create(self) -> None:
         await super().create()
         tlog(f"strategy {self.name} created")
+        if not self.portfolio_id or not len(self.portfolio_id):
+            self.portfolio_id = str(uuid.uuid4())
+        if not await Portfolio.exists(self.portfolio_id):
+            await Portfolio.save(
+                portfolio_id=self.portfolio_id,
+                portfolio_size=self.portfolio_size,
+                stock_count=self.stock_count,
+                parameters={"rank_days": self.rank_days, "index": self.index},
+            )
+        await Portfolio.associate_batch_id_to_profile(
+            portfolio_id=self.portfolio_id, batch_id=self.batch_id
+        )
 
-    async def rebalance(self, now: datetime):
+    async def rebalance(
+        self, symbols_position: Dict[str, int], now: datetime
+    ) -> Dict[str, Dict]:
         await self.set_global_var("last_rebalance", str(now), self.context)
 
         self.trend_logic = TrendLogic(
@@ -88,11 +104,64 @@ class TrendFollow(Strategy):
             rank_days=self.rank_days,
             debug=self.debug,
         )
-        print("REBALANCE", now)
-        df = await self.trend_logic.run(now)
-        print(df)
+        symbols_position = {
+            symbol: symbols_position[symbol]
+            for symbol in symbols_position
+            if symbols_position[symbol]
+        }
+        print("old", symbols_position)
+        new_profile = await self.trend_logic.run(now)
+        print("new", new_profile)
 
-        return {}
+        sell_symbols = [
+            symbol
+            for symbol in symbols_position
+            if symbol not in new_profile.symbol.tolist()
+        ]
+        keep_symbols = [
+            symbol
+            for symbol in symbols_position
+            if symbol in new_profile.symbol.tolist()
+        ]
+        money_left = self.portfolio_size - sum(
+            self.data_loader[symbol].close[now] for symbol in keep_symbols
+        )
+
+        buy_symbols = new_profile[
+            ~new_profile.symbol.isin(sell_symbols + keep_symbols)
+        ].sort_values(by="score", ascending=False)
+        buy_symbols["accumulative"] = buy_symbols.est.cumsum()
+        buy_symbols = buy_symbols[buy_symbols.accumulative <= money_left]
+
+        print("sell", sell_symbols)
+        print("buy", buy_symbols)
+
+        actions = {}
+        actions.update(
+            {
+                symbol: {
+                    "side": "sell",
+                    "qty": symbols_position[symbol],
+                    "type": "market",
+                }
+                for symbol in sell_symbols
+            }
+        )
+        actions.update(
+            {
+                symbol: {
+                    "side": "buy",
+                    "qty": int(
+                        buy_symbols.loc[buy_symbols.symbol == symbol, "qty"]
+                    ),
+                    "type": "market",
+                }
+                for symbol in buy_symbols.symbol.unique().tolist()
+            }
+        )
+
+        print("actions", actions)
+        return actions
 
     async def should_rebalance(self, now: datetime) -> bool:
         last_rebalance = await self.get_global_var(
@@ -125,10 +194,10 @@ class TrendFollow(Strategy):
         trading_api: tradeapi = None,
         debug: bool = False,
         backtesting: bool = False,
-    ) -> Dict[str, Tuple[bool, Dict]]:
+    ) -> Dict[str, Dict]:
         self.context = self.batch_id if backtesting else self.name
         if await self.should_rebalance(now):
-            return await self.rebalance(now)
+            return await self.rebalance(symbols_position, now)
         return {}
 
     async def should_run_all(self):
