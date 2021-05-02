@@ -21,6 +21,7 @@ from pandas import DataFrame as df
 from pytz import timezone
 
 sys.path.append("..")
+from liualgotrader.models.accounts import Accounts
 from liualgotrader.models.portfolio import Portfolio
 
 from trades.common.trend import Trend as TrendLogic
@@ -35,7 +36,6 @@ class TrendFollow(Strategy):
         self,
         batch_id: str,
         data_loader: DataLoader,
-        portfolio_id: str,
         portfolio_size: int,
         rebalance_rate: str,
         stock_count: int,
@@ -43,6 +43,9 @@ class TrendFollow(Strategy):
         rank_days: int,
         debug: bool,
         ref_run_id: str = None,
+        account_id: int = None,
+        reinvest: bool = False,
+        portfolio_id: str = None,
     ):
         self.context: str
         self.portfolio_id = portfolio_id
@@ -53,7 +56,8 @@ class TrendFollow(Strategy):
         self.stock_count = stock_count
         self.rank_days = rank_days
         self.debug = debug
-
+        self.account_id = account_id
+        self.reinvest = reinvest
         if rebalance_rate not in ["daily", "hourly", "weekly"]:
             raise AssertionError(
                 f"rebalance schedule can be either daily/hourly not {rebalance_rate}"
@@ -71,13 +75,20 @@ class TrendFollow(Strategy):
         )
 
     async def buy_callback(self, symbol: str, price: float, qty: int) -> None:
-        pass
+        if self.account_id:
+            await Accounts.add_transaction(
+                account_id=self.account_id, amount=-price * qty
+            )
 
     async def sell_callback(self, symbol: str, price: float, qty: int) -> None:
-        pass
+        if self.account_id:
+            await Accounts.add_transaction(
+                account_id=self.account_id, amount=price * qty
+            )
 
-    async def create(self) -> None:
+    async def create(self) -> bool:
         await super().create()
+
         tlog(f"strategy {self.name} created")
         if not self.portfolio_id or not len(self.portfolio_id):
             self.portfolio_id = str(uuid.uuid4())
@@ -88,18 +99,35 @@ class TrendFollow(Strategy):
                 stock_count=self.stock_count,
                 parameters={"rank_days": self.rank_days, "index": self.index},
             )
-        await Portfolio.associate_batch_id_to_profile(
-            portfolio_id=self.portfolio_id, batch_id=self.batch_id
-        )
+            print(f"create new Portfolio w/ id {self.portfolio_id}")
+        try:
+            await Portfolio.associate_batch_id_to_profile(
+                portfolio_id=self.portfolio_id, batch_id=self.batch_id
+            )
+        except Exception:
+            print("Probably already associated...")
+            return False
+
+        return True
 
     async def rebalance(
-        self, symbols_position: Dict[str, int], now: datetime
+        self,
+        data_loader: DataLoader,
+        symbols_position: Dict[str, int],
+        now: datetime,
     ) -> Dict[str, Dict]:
         await self.set_global_var("last_rebalance", str(now), self.context)
-
+        cash = await Accounts.get_balance(self.account_id)
+        invested_amount = sum(
+            symbols_position[symbol] * data_loader[symbol].close[now]
+            for symbol in symbols_position
+        )
+        tlog(
+            f"starting rebalance for {now} w ${cash} cash + ${invested_amount} equity"
+        )
         self.trend_logic = TrendLogic(
             symbols=(await index_data(self.index)).Symbol.tolist(),
-            portfolio_size=self.portfolio_size,
+            portfolio_size=cash + invested_amount,
             stock_count=self.stock_count,
             rank_days=self.rank_days,
             debug=self.debug,
@@ -109,9 +137,7 @@ class TrendFollow(Strategy):
             for symbol in symbols_position
             if symbols_position[symbol]
         }
-        print("old", symbols_position)
         new_profile = await self.trend_logic.run(now)
-        print("new", new_profile)
 
         sell_symbols = [
             symbol
@@ -123,9 +149,13 @@ class TrendFollow(Strategy):
             for symbol in symbols_position
             if symbol in new_profile.symbol.tolist()
         ]
-        money_left = self.portfolio_size - sum(
-            self.data_loader[symbol].close[now] for symbol in keep_symbols
+        sell_amount = sum(
+            symbols_position[symbol] * data_loader[symbol].close[now]
+            for symbol in sell_symbols
         )
+
+        print(f"cash:{cash} sell_amount:{sell_amount}")
+        money_left = cash + sell_amount
 
         buy_symbols = new_profile[
             ~new_profile.symbol.isin(sell_symbols + keep_symbols)
@@ -133,8 +163,7 @@ class TrendFollow(Strategy):
         buy_symbols["accumulative"] = buy_symbols.est.cumsum()
         buy_symbols = buy_symbols[buy_symbols.accumulative <= money_left]
 
-        print("sell", sell_symbols)
-        print("buy", buy_symbols)
+        tlog(f"sell: {sell_symbols} buy: {buy_symbols}")
 
         actions = {}
         actions.update(
@@ -159,8 +188,7 @@ class TrendFollow(Strategy):
                 for symbol in buy_symbols.symbol.unique().tolist()
             }
         )
-
-        print("actions", actions)
+        tlog("rebalance completed")
         return actions
 
     async def should_rebalance(self, now: datetime) -> bool:
@@ -197,7 +225,7 @@ class TrendFollow(Strategy):
     ) -> Dict[str, Dict]:
         self.context = self.batch_id if backtesting else self.name
         if await self.should_rebalance(now):
-            return await self.rebalance(symbols_position, now)
+            return await self.rebalance(data_loader, symbols_position, now)
         return {}
 
     async def should_run_all(self):
