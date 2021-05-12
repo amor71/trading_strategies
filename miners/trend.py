@@ -138,9 +138,9 @@ class Trend(Miner):
         portfolio_id = await self.save_portfolio()
         await self.display_portfolio(df)
 
-        await self.execute_portfolio(
-            portfolio_id, df, nyc.localize(datetime.utcnow())
-        )
+        # await self.execute_portfolio(
+        #    portfolio_id, df, nyc.localize(datetime.utcnow())
+        # )
         print(
             "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
         )
