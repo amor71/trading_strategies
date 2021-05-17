@@ -99,13 +99,13 @@ class TrendFollow(Strategy):
                 stock_count=self.stock_count,
                 parameters={"rank_days": self.rank_days, "index": self.index},
             )
-            print(f"create new Portfolio w/ id {self.portfolio_id}")
+            tlog(f"create new Portfolio w/ id {self.portfolio_id}")
         try:
             await Portfolio.associate_batch_id_to_profile(
                 portfolio_id=self.portfolio_id, batch_id=self.batch_id
             )
         except Exception:
-            print("Probably already associated...")
+            tlog("Probably already associated...")
             return False
 
         return True
