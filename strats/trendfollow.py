@@ -6,6 +6,8 @@ from typing import Dict, List, Optional, Tuple
 
 import alpaca_trade_api as tradeapi
 import numpy as np
+import pandas as pd
+from liualgotrader.analytics import analysis
 from liualgotrader.common import config
 from liualgotrader.common.data_loader import DataLoader
 from liualgotrader.common.market_data import index_data
@@ -87,7 +89,8 @@ class TrendFollow(Strategy):
             )
 
     async def create(self) -> bool:
-        await super().create()
+        if not await super().create():
+            return False
 
         tlog(f"strategy {self.name} created")
         if not self.portfolio_id or not len(self.portfolio_id):
@@ -213,6 +216,27 @@ class TrendFollow(Strategy):
 
         return False
 
+    async def load_symbol_position(self) -> Dict[str, int]:
+        trades = analysis.load_trades_by_portfolio(self.portfolio_id)
+        new_df = pd.DataFrame()
+        new_df["symbol"] = trades.symbol.unique()
+        new_df["qty"] = new_df.symbol.apply(
+            lambda x: (
+                trades[
+                    (trades.symbol == x) & (trades.operation == "buy")
+                ].qty.sum()
+            )
+            - trades[
+                (trades.symbol == x) & (trades.operation == "sell")
+            ].qty.sum()
+        )
+
+        rc_dict: Dict[str, int] = {}
+        for _, row in new_df.iterrows():
+            rc_dict[row.symbol] = int(row.qty)
+
+        return rc_dict
+
     async def run_all(
         self,
         symbols_position: Dict[str, int],
@@ -225,7 +249,10 @@ class TrendFollow(Strategy):
     ) -> Dict[str, Dict]:
         self.context = self.batch_id if backtesting else self.name
         if await self.should_rebalance(now):
-            return await self.rebalance(data_loader, symbols_position, now)
+            portfolio_symbols_position = await self.load_symbol_position()
+            return await self.rebalance(
+                data_loader, portfolio_symbols_position, now
+            )
         return {}
 
     async def should_run_all(self):
