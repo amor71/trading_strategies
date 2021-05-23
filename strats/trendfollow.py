@@ -135,60 +135,68 @@ class TrendFollow(Strategy):
             rank_days=self.rank_days,
             debug=self.debug,
         )
-        symbols_position = {
-            symbol: symbols_position[symbol]
-            for symbol in symbols_position
-            if symbols_position[symbol]
-        }
         new_profile = await self.trend_logic.run(now)
 
-        sell_symbols = [
-            symbol
+        sell_positions = {
+            symbol: symbols_position[symbol]
             for symbol in symbols_position
             if symbol not in new_profile.symbol.tolist()
-        ]
-        keep_symbols = [
-            symbol
-            for symbol in symbols_position
-            if symbol in new_profile.symbol.tolist()
-        ]
+        }
+        sell_positions.update(
+            {
+                symbol: (
+                    symbols_position[symbol]
+                    - new_profile[new_profile.symbol == symbol].qty
+                )
+                for symbol in symbols_position
+                if symbol in new_profile.symbol.tolist()
+                and new_profile[new_profile.symbol == symbol].qty
+                < symbols_position[symbol]
+            }
+        )
         sell_amount = sum(
-            symbols_position[symbol] * data_loader[symbol].close[now]
-            for symbol in sell_symbols
+            sell_positions[symbol] * data_loader[symbol].close[now]
+            for symbol in sell_positions
         )
 
         print(f"cash:{cash} sell_amount:{sell_amount}")
-        money_left = cash + sell_amount
 
-        buy_symbols = new_profile[
-            ~new_profile.symbol.isin(sell_symbols + keep_symbols)
-        ].sort_values(by="score", ascending=False)
-        buy_symbols["accumulative"] = buy_symbols.est.cumsum()
-        buy_symbols = buy_symbols[buy_symbols.accumulative <= money_left]
-
-        tlog(f"sell: {sell_symbols} buy: {buy_symbols}")
-
-        actions = {}
-        actions.update(
+        buy_positions = {
+            symbol: new_profile[new_profile.symbol == symbol].qty
+            for symbol in new_profile.symbol.tolist()
+            if symbol not in symbols_position and symbol not in sell_positions
+        }
+        buy_positions.update(
             {
-                symbol: {
-                    "side": "sell",
-                    "qty": symbols_position[symbol],
-                    "type": "market",
-                }
-                for symbol in sell_symbols
+                symbol: (
+                    new_profile[new_profile.symbol == symbol].qty
+                    - symbols_position[symbol]
+                )
+                for symbol in symbols_position
+                if symbol in new_profile.symbol.tolist()
+                and new_profile[new_profile.symbol == symbol].qty
+                > symbols_position[symbol]
             }
         )
+
+        tlog(f"sell: {sell_positions} buy: {buy_positions}")
+
+        actions = {
+            symbol: {
+                "side": "sell",
+                "qty": sell_positions[symbol],
+                "type": "market",
+            }
+            for symbol in sell_positions
+        }
         actions.update(
             {
                 symbol: {
                     "side": "buy",
-                    "qty": int(
-                        buy_symbols.loc[buy_symbols.symbol == symbol, "qty"]
-                    ),
+                    "qty": buy_positions[symbol],
                     "type": "market",
                 }
-                for symbol in buy_symbols.symbol.unique().tolist()
+                for symbol in buy_positions
             }
         )
         tlog("rebalance completed")
@@ -249,10 +257,13 @@ class TrendFollow(Strategy):
     ) -> Dict[str, Dict]:
         self.context = self.batch_id if backtesting else self.name
         if await self.should_rebalance(now):
+            tlog("time for rebalance")
             portfolio_symbols_position = await self.load_symbol_position()
+            tlog(f"current positions {portfolio_symbols_position}")
             return await self.rebalance(
                 data_loader, portfolio_symbols_position, now
             )
+
         return {}
 
     async def should_run_all(self):
