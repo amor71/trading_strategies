@@ -136,7 +136,7 @@ class TrendFollow(Strategy):
             debug=self.debug,
         )
         new_profile = await self.trend_logic.run(now)
-
+        tlog(f"{new_profile}")
         sell_positions = {
             symbol: symbols_position[symbol]
             for symbol in symbols_position
@@ -146,12 +146,14 @@ class TrendFollow(Strategy):
             {
                 symbol: (
                     symbols_position[symbol]
-                    - new_profile[new_profile.symbol == symbol].qty
+                    - new_profile[new_profile.symbol == symbol].qty.values[0]
                 )
                 for symbol in symbols_position
-                if symbol in new_profile.symbol.tolist()
-                and new_profile[new_profile.symbol == symbol].qty
-                < symbols_position[symbol]
+                if (
+                    symbol in new_profile.symbol.tolist()
+                    and new_profile[new_profile.symbol == symbol].qty.values[0]
+                    < symbols_position[symbol]
+                )
             }
         )
         sell_amount = sum(
@@ -159,22 +161,21 @@ class TrendFollow(Strategy):
             for symbol in sell_positions
         )
 
-        print(f"cash:{cash} sell_amount:{sell_amount}")
-
+        tlog(f"cash:{cash} sell_amount:{sell_amount}")
         buy_positions = {
-            symbol: new_profile[new_profile.symbol == symbol].qty
+            symbol: new_profile[new_profile.symbol == symbol].qty.values[0]
             for symbol in new_profile.symbol.tolist()
             if symbol not in symbols_position and symbol not in sell_positions
         }
         buy_positions.update(
             {
                 symbol: (
-                    new_profile[new_profile.symbol == symbol].qty
+                    new_profile[new_profile.symbol == symbol].qty.values[0]
                     - symbols_position[symbol]
                 )
                 for symbol in symbols_position
                 if symbol in new_profile.symbol.tolist()
-                and new_profile[new_profile.symbol == symbol].qty
+                and new_profile[new_profile.symbol == symbol].qty.values[0]
                 > symbols_position[symbol]
             }
         )
@@ -226,6 +227,9 @@ class TrendFollow(Strategy):
 
     async def load_symbol_position(self) -> Dict[str, int]:
         trades = analysis.load_trades_by_portfolio(self.portfolio_id)
+
+        if not len(trades):
+            return {}
         new_df = pd.DataFrame()
         new_df["symbol"] = trades.symbol.unique()
         new_df["qty"] = new_df.symbol.apply(

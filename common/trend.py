@@ -47,7 +47,7 @@ class Trend:
     def load_data_for_symbol(self, symbol: str, now: datetime) -> None:
         try:
             self.data_bars[symbol] = self.data_loader[symbol][
-                date.today() - timedelta(days=int(200 * 7 / 5)) : now  # type: ignore
+                now.date() - timedelta(days=int(200 * 7 / 5)) : now  # type: ignore
             ]
         except Exception:
             tlog(f"[ERROR] could not load all data points for {symbol}")
@@ -195,7 +195,6 @@ class Trend:
                 / sum_vol
                 / self.data_bars[row.symbol].close[-1]
             )
-
             self.portfolio.loc[
                 self.portfolio.symbol == row.symbol, "qty"
             ] = qty
