@@ -76,16 +76,32 @@ class TrendFollow(Strategy):
             schedule=[],
         )
 
-    async def buy_callback(self, symbol: str, price: float, qty: int) -> None:
+    async def buy_callback(
+        self, symbol: str, price: float, qty: int, now: datetime = None
+    ) -> None:
         if self.account_id:
             await Accounts.add_transaction(
-                account_id=self.account_id, amount=-price * qty
+                account_id=self.account_id, amount=-price * qty, tstamp=now
+            )
+            print(
+                "buy",
+                -price * qty,
+                "balance post buy",
+                await Accounts.get_balance(self.account_id),
             )
 
-    async def sell_callback(self, symbol: str, price: float, qty: int) -> None:
+    async def sell_callback(
+        self, symbol: str, price: float, qty: int, now: datetime = None
+    ) -> None:
         if self.account_id:
             await Accounts.add_transaction(
-                account_id=self.account_id, amount=price * qty
+                account_id=self.account_id, amount=price * qty, tstamp=now
+            )
+            print(
+                "sell",
+                price * qty,
+                "balance post sell",
+                await Accounts.get_balance(self.account_id),
             )
 
     async def create(self) -> bool:
@@ -189,6 +205,7 @@ class TrendFollow(Strategy):
                 "type": "market",
             }
             for symbol in sell_positions
+            if sell_positions[symbol] > 0
         }
         actions.update(
             {
@@ -198,6 +215,7 @@ class TrendFollow(Strategy):
                     "type": "market",
                 }
                 for symbol in buy_positions
+                if buy_positions[symbol] > 0
             }
         )
         tlog("rebalance completed")

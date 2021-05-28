@@ -1,5 +1,6 @@
 import asyncio
 import concurrent.futures
+import math
 import traceback
 import uuid
 from datetime import date, datetime, timedelta
@@ -49,6 +50,7 @@ class Trend:
             self.data_bars[symbol] = self.data_loader[symbol][
                 now.date() - timedelta(days=int(200 * 7 / 5)) : now  # type: ignore
             ]
+
         except Exception:
             tlog(f"[ERROR] could not load all data points for {symbol}")
             traceback.print_exc()
@@ -130,17 +132,39 @@ class Trend:
     def apply_filters_symbol(self, symbol: str, now: datetime) -> bool:
         indicator_calculator = StockDataFrame(self.data_bars[symbol])
         sma_100 = indicator_calculator["close_100_sma"]
-        return self.data_bars[symbol].close[-1] >= sma_100[-1]
+        if self.data_bars[symbol].close[-1] < sma_100[-1]:
+            return False
 
+        if (
+            1.0
+            - self.portfolio.loc[
+                self.portfolio.symbol == symbol
+            ].volatility.values
+            > 0.03
+        ):
+            return False
+
+        return True
         # filter stocks moving > 15% in last 90 days
-        # last = self.data_bars[symbol].close[
-        #    -1
-        # ]  # self.data_bars[row.symbol].close[-90:].max()
-        # low = self.data_bars[symbol].close[-90:].min()  # type: ignore
-        # return last / low <= 1.25
+        last = self.data_bars[symbol].close[
+            -1
+        ]  # self.data_bars[row.symbol].close[-90:].max()
+        start = self.data_bars[symbol].close[-90]
+        return last / start <= 1.50
 
     async def apply_filters(self, now: datetime) -> None:
         tlog("Applying filters")
+        for _, row in self.portfolio.iterrows():
+            self.portfolio.loc[
+                self.portfolio.symbol == row.symbol, "volatility"
+            ] = (
+                1
+                - self.data_bars[row.symbol]
+                .close.pct_change()
+                .rolling(20)
+                .std()
+                .iloc[-1]
+            )
         pre_filter_len = len(self.portfolio)
         symbols = [
             symbol
@@ -167,28 +191,10 @@ class Trend:
         tlog(f"filters removed {pre_filter_len-len(self.portfolio)}")
 
     async def calc_balance(self) -> None:
-        for _, row in self.portfolio.iterrows():
-            self.portfolio.loc[
-                self.portfolio.symbol == row.symbol, "volatility"
-            ] = (
-                self.data_bars[row.symbol]
-                .close.pct_change()
-                .rolling(20)
-                .std()
-                .iloc[-1]
-            )
+        print("size", self.portfolio_size)
 
         sum_vol = self.portfolio.volatility.sum()
         for _, row in self.portfolio.iterrows():
-            self.portfolio.loc[
-                self.portfolio.symbol == row.symbol, "volatility"
-            ] = (
-                self.data_bars[row.symbol]
-                .close.pct_change()
-                .rolling(20)
-                .std()
-                .iloc[-1]
-            )
             qty = int(
                 self.portfolio_size
                 * row.volatility
@@ -202,7 +208,8 @@ class Trend:
                 qty * self.data_bars[row.symbol].close[-1]
             )
 
-        self.portfolio = self.portfolio.loc[self.portfolio.qty > 0]
+        if len(self.portfolio) > 0:
+            self.portfolio = self.portfolio.loc[self.portfolio.qty > 0]
         self.portfolio["accumulative"] = self.portfolio.est.cumsum()
 
     async def run(self, now: datetime) -> df:
