@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import uuid
 from datetime import datetime, time, timedelta
 from typing import Dict, List, Tuple
 
@@ -16,6 +17,8 @@ from liualgotrader.common.trading_data import (buy_indicators, buy_time,
                                                sell_indicators, stop_prices,
                                                target_prices)
 from liualgotrader.fincalcs.support_resistance import find_stop
+from liualgotrader.models.accounts import Accounts
+from liualgotrader.models.portfolio import Portfolio
 from liualgotrader.strategies.base import Strategy, StrategyType
 from pandas import DataFrame as df
 from pytz import timezone
@@ -30,12 +33,12 @@ class BandTrade(Strategy):
     def __init__(
         self,
         batch_id: str,
-        amount: int,
         data_loader: DataLoader,
+        portfolio_id: str,
         ref_run_id: int = None,
     ):
-        self.amount = amount
         self.name = type(self).__name__
+        self.portfolio_id = portfolio_id
         super().__init__(
             name=type(self).__name__,
             type=StrategyType.SWING,
@@ -45,15 +48,52 @@ class BandTrade(Strategy):
             data_loader=data_loader,
         )
 
-    async def buy_callback(self, symbol: str, price: float, qty: int) -> None:
-        pass
+    async def buy_callback(
+        self, symbol: str, price: float, qty: int, now: datetime = None
+    ) -> None:
+        if self.account_id:
+            await Accounts.add_transaction(
+                account_id=self.account_id, amount=-price * qty, tstamp=now
+            )
+            print(
+                "buy",
+                -price * qty,
+                "balance post buy",
+                await Accounts.get_balance(self.account_id),
+            )
 
-    async def sell_callback(self, symbol: str, price: float, qty: int) -> None:
-        pass
+    async def sell_callback(
+        self, symbol: str, price: float, qty: int, now: datetime = None
+    ) -> None:
+        if self.account_id:
+            await Accounts.add_transaction(
+                account_id=self.account_id, amount=price * qty, tstamp=now
+            )
+            print(
+                "sell",
+                price * qty,
+                "balance post sell",
+                await Accounts.get_balance(self.account_id),
+            )
 
-    async def create(self) -> None:
-        await super().create()
+    async def create(self) -> bool:
+        if not await super().create():
+            return False
+
         tlog(f"strategy {self.name} created")
+        try:
+            await Portfolio.associate_batch_id_to_profile(
+                portfolio_id=self.portfolio_id, batch_id=self.batch_id
+            )
+        except Exception:
+            tlog("Probably already associated...")
+            return False
+
+        self.account_id, self.portfolio_size = await Portfolio.load_details(
+            self.portfolio_id
+        )
+
+        return True
 
     async def should_cool_down(self, symbol: str, now: datetime):
         if (
@@ -68,11 +108,7 @@ class BandTrade(Strategy):
 
     async def is_buy_time(self, now: datetime):
         return (
-            True
-            if time(hour=14, minute=30)
-            >= now.time()
-            >= time(hour=9, minute=30)
-            else False
+            time(hour=14, minute=30) >= now.time() >= time(hour=9, minute=30)
         )
 
     async def is_sell_time(self, now: datetime):
@@ -178,7 +214,8 @@ class BandTrade(Strategy):
                 buy_indicators[symbol] = {
                     "lower_band": self.bband[symbol][2][-2:].tolist(),
                 }
-                shares_to_buy = self.amount // current_price
+                cash = await Accounts.get_balance(self.account_id)
+                shares_to_buy = cash // current_price
                 tlog(
                     f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {current_price}"
                 )

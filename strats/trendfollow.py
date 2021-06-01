@@ -38,27 +38,23 @@ class TrendFollow(Strategy):
         self,
         batch_id: str,
         data_loader: DataLoader,
-        portfolio_size: int,
         rebalance_rate: str,
         stock_count: int,
         index: str,
         rank_days: int,
         debug: bool,
+        portfolio_id: str,
         ref_run_id: str = None,
-        account_id: int = None,
         reinvest: bool = False,
-        portfolio_id: str = None,
     ):
         self.context: str
         self.portfolio_id = portfolio_id
-        self.portfolio_size = portfolio_size
         self.last_rebalance: str
         self.trend_logic: Optional[TrendLogic] = None
         self.index = index
         self.stock_count = stock_count
         self.rank_days = rank_days
         self.debug = debug
-        self.account_id = account_id
         self.reinvest = reinvest
         if rebalance_rate not in ["daily", "hourly", "weekly"]:
             raise AssertionError(
@@ -109,16 +105,6 @@ class TrendFollow(Strategy):
             return False
 
         tlog(f"strategy {self.name} created")
-        if not self.portfolio_id or not len(self.portfolio_id):
-            self.portfolio_id = str(uuid.uuid4())
-        if not await Portfolio.exists(self.portfolio_id):
-            await Portfolio.save(
-                portfolio_id=self.portfolio_id,
-                portfolio_size=self.portfolio_size,
-                stock_count=self.stock_count,
-                parameters={"rank_days": self.rank_days, "index": self.index},
-            )
-            tlog(f"create new Portfolio w/ id {self.portfolio_id}")
         try:
             await Portfolio.associate_batch_id_to_profile(
                 portfolio_id=self.portfolio_id, batch_id=self.batch_id
@@ -127,6 +113,9 @@ class TrendFollow(Strategy):
             tlog("Probably already associated...")
             return False
 
+        self.account_id, self.portfolio_size = await Portfolio.load_details(
+            self.portfolio_id
+        )
         return True
 
     async def rebalance(
