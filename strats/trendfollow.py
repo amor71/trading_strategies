@@ -258,7 +258,7 @@ class TrendFollow(Strategy):
 
     async def run_all(
         self,
-        symbols_position: Dict[str, int],
+        symbols_position: Dict[str, float],
         data_loader: DataLoader,
         now: datetime,
         portfolio_value: float = None,

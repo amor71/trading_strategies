@@ -118,7 +118,7 @@ class BandTrade(Strategy):
         self,
         symbol: str,
         shortable: bool,
-        position: int,
+        position: float,
         now: datetime,
         minute_history: df = None,
         portfolio_value: float = None,
