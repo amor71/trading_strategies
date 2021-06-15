@@ -26,7 +26,6 @@ from talib import BBANDS, MACD, RSI, MA_Type
 
 
 class BandTrade(Strategy):
-    whipsawed: Dict = {}
     bband: Dict = {}
     resampled_close: Dict = {}
 
@@ -39,6 +38,7 @@ class BandTrade(Strategy):
     ):
         self.name = type(self).__name__
         self.portfolio_id = portfolio_id
+        self.buy_price: Dict[str, float] = {}
         super().__init__(
             name=type(self).__name__,
             type=StrategyType.SWING,
@@ -61,6 +61,7 @@ class BandTrade(Strategy):
                 "balance post buy",
                 await Accounts.get_balance(self.account_id),
             )
+            self.buy_price[symbol] = price
 
     async def sell_callback(
         self, symbol: str, price: float, qty: int, now: datetime = None
@@ -69,6 +70,7 @@ class BandTrade(Strategy):
             await Accounts.add_transaction(
                 account_id=self.account_id, amount=price * qty, tstamp=now
             )
+            self.buy_price.pop(symbol)
             print(
                 "sell",
                 price * qty,
@@ -114,49 +116,28 @@ class BandTrade(Strategy):
     async def is_sell_time(self, now: datetime):
         return True
 
-    async def run(
+    async def handle_buy_side(
         self,
-        symbol: str,
-        shortable: bool,
-        position: float,
+        symbols_position: Dict[str, float],
+        data_loader: DataLoader,
         now: datetime,
-        minute_history: df = None,
-        portfolio_value: float = None,
-        trading_api: tradeapi = None,
-        debug: bool = False,
-        backtesting: bool = False,
-    ) -> Tuple[bool, Dict]:
-        current_price = (
-            minute_history.close[-1]
-            if minute_history is not None
-            else self.data_loader[symbol].open[now]
-        )
-        # tlog(f"{now} {current_price}")
-        if (
-            await self.is_buy_time(now)
-            and not position
-            and not open_orders.get(symbol, None)
-            and not await self.should_cool_down(symbol, now)
-        ):
-            # Calculate 7 day Bolinger Band, w 1 std
-            if minute_history is not None:
-                self.resampled_close[symbol] = (
-                    minute_history.between_time("9:30", "16:00")
-                    .close.resample("1D")
-                    .last()
-                    .dropna()
-                )
-                # print(self.resampled_close[symbol])
-            else:
-                self.resampled_close[symbol] = (
-                    self.data_loader[symbol]
-                    .close[now - timedelta(days=30) : now]  # type: ignore
-                    .between_time("9:30", "16:00")
-                    .resample("1D")
-                    .last()
-                    .dropna()
-                )
+    ) -> Dict[str, Dict]:
+        actions = {}
 
+        for symbol in symbols_position:
+            current_price = data_loader[symbol].close[now]
+            serie = (
+                self.data_loader[symbol]
+                .close[now - timedelta(days=30) : now]  # type:ignore
+                .between_time("9:30", "16:00")
+            )
+
+            if not len(serie):
+                serie = self.data_loader[symbol].close[
+                    now - timedelta(days=30) : now  # type:ignore
+                ]
+
+            self.resampled_close[symbol] = serie.resample("1D").last().dropna()
             self.bband[symbol] = BBANDS(
                 self.resampled_close[symbol],
                 timeperiod=7,
@@ -177,17 +158,9 @@ class BandTrade(Strategy):
             # print(
             #    f"yesterday_lower_band:{yesterday_lower_band} today_lower_band:{today_lower_band} yesterday_close:{yesterday_close}"
             # )
-            if minute_history is not None:
-                start_day_index = minute_history.index.get_loc(
-                    config.market_open.replace(second=0, microsecond=0),
-                    method="nearest",
-                )
-                today_open = minute_history.iloc[start_day_index].open
-                # print("today open:", today_open)
-            else:
-                today_open = self.data_loader[symbol].open[
-                    config.market_open.replace(second=0, microsecond=0)
-                ]
+            today_open = self.data_loader[symbol].open[
+                config.market_open.replace(second=0, microsecond=0)
+            ]
 
             if (
                 yesterday_close < yesterday_lower_band
@@ -198,7 +171,7 @@ class BandTrade(Strategy):
                 # (if price pops above upper-band -> sell)
                 yesterday_upper_band = self.bband[symbol][0][-2]
                 if current_price > yesterday_upper_band:
-                    return False, {}
+                    return {}
 
                 print(
                     config.market_close.replace(second=0, microsecond=0)
@@ -220,39 +193,40 @@ class BandTrade(Strategy):
                     f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {current_price}"
                 )
                 tlog(f"indicators:{buy_indicators[symbol]}")
-                return (
-                    True,
-                    {
-                        "side": "buy",
-                        "qty": str(shares_to_buy),
-                        "type": "limit",
-                        "limit_price": str(current_price),
-                    },
-                )
+                actions[symbol] = {
+                    "side": "buy",
+                    "qty": str(shares_to_buy),
+                    "type": "limit",
+                    "limit_price": str(current_price),
+                }
 
-        if (
-            await self.is_sell_time(now)
-            and position
-            and last_used_strategy[symbol].name == self.name
-            and not open_orders.get(symbol)
-        ):
-            # Calculate 7 day Bolinger Band, w 1 std
-            if minute_history is not None:
-                self.resampled_close[symbol] = (
-                    minute_history.between_time("9:30", "16:00")
-                    .close.resample("1D")
-                    .last()
-                    .dropna()
-                )
-            else:
-                self.resampled_close[symbol] = (
-                    self.data_loader[symbol]
-                    .close[now - timedelta(days=30) : now]  # type: ignore
-                    .between_time("9:30", "16:00")
-                    .resample("1D")
-                    .last()
-                    .dropna()
-                )
+        return actions
+
+    async def handle_sell_side(
+        self,
+        symbols_position: Dict[str, float],
+        data_loader: DataLoader,
+        now: datetime,
+    ) -> Dict[str, Dict]:
+        actions = {}
+
+        for symbol, position in symbols_position.items():
+            if position == 0:
+                continue
+
+            current_price = data_loader[symbol].close[now]
+            serie = (
+                self.data_loader[symbol]
+                .close[now - timedelta(days=30) : now]  # type:ignore
+                .between_time("9:30", "16:00")
+            )
+
+            if not len(serie):
+                serie = self.data_loader[symbol].close[
+                    now - timedelta(days=30) : now  # type:ignore
+                ]
+
+            self.resampled_close[symbol] = serie.resample("1D").last().dropna()
             self.bband[symbol] = BBANDS(
                 self.resampled_close[symbol],
                 timeperiod=7,
@@ -263,23 +237,65 @@ class BandTrade(Strategy):
 
             # if price pops above upper-band -> sell
             yesterday_upper_band = self.bband[symbol][0][-2]
+
             # print(current_price, yesterday_upper_band)
             if current_price > yesterday_upper_band:
                 sell_indicators[symbol] = {
                     "upper_band": self.bband[symbol][0][-2:].tolist(),
+                    "lower_band": self.bband[symbol][2][-2:].tolist(),
                 }
 
                 tlog(
                     f"[{self.name}][{now}] Submitting sell for {position} shares of {symbol} at market"
                 )
                 tlog(f"indicators:{sell_indicators[symbol]}")
-                return (
-                    True,
-                    {
-                        "side": "sell",
-                        "qty": str(position),
-                        "type": "market",
-                    },
-                )
+                actions[symbol] = {
+                    "side": "sell",
+                    "qty": str(position),
+                    "type": "market",
+                }
 
-        return False, {}
+        return actions
+
+    async def should_run_all(self):
+        return True
+
+    async def run_all(
+        self,
+        symbols_position: Dict[str, float],
+        data_loader: DataLoader,
+        now: datetime,
+        portfolio_value: float = None,
+        trading_api: tradeapi = None,
+        debug: bool = False,
+        backtesting: bool = False,
+    ) -> Dict[str, Dict]:
+
+        actions = {}
+        # print(now, symbols_position)
+        if await self.is_buy_time(now) and not open_orders:
+            actions.update(
+                await self.handle_buy_side(
+                    symbols_position=symbols_position,
+                    data_loader=data_loader,
+                    now=now,
+                )
+            )
+
+        if (
+            await self.is_sell_time(now)
+            and (
+                len(symbols_position)
+                or any(symbols_position[x] for x in symbols_position)
+            )
+            and not open_orders
+        ):
+            actions.update(
+                await self.handle_sell_side(
+                    symbols_position=symbols_position,
+                    data_loader=data_loader,
+                    now=now,
+                )
+            )
+
+        return actions
