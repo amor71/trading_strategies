@@ -75,9 +75,7 @@ class Trend:
             f"Data loading completed, loaded data for {len(self.data_bars)} symbols"
         )
 
-    def calc_symbol_momentum(
-        self, symbol: str, now: datetime
-    ) -> Optional[Dict]:
+    def calc_symbol_momentum(self, symbol: str) -> Optional[Dict]:
         d = self.data_bars[symbol]
         _df = df(d)
         deltas = np.log(_df.close[-self.rank_days :])  # type: ignore
@@ -97,7 +95,7 @@ class Trend:
         else:
             return None
 
-    async def calc_momentum(self, now: datetime) -> None:
+    async def calc_momentum(self) -> None:
         if not len(self.data_bars):
             raise Exception("calc_momentum() can't run without data. aborting")
 
@@ -112,7 +110,7 @@ class Trend:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # Start the load operations and mark each future with its URL
             futures = {
-                executor.submit(self.calc_symbol_momentum, symbol, now): symbol
+                executor.submit(self.calc_symbol_momentum, symbol): symbol
                 for symbol in symbols
             }
             for future in concurrent.futures.as_completed(futures):
@@ -129,7 +127,7 @@ class Trend:
             f"Trend ranking calculation completed w/ {len(self.portfolio)} trending stocks"
         )
 
-    def apply_filters_symbol(self, symbol: str, now: datetime) -> bool:
+    def apply_filters_symbol(self, symbol: str) -> bool:
         indicator_calculator = StockDataFrame(self.data_bars[symbol])
         sma_100 = indicator_calculator["close_100_sma"]
         if self.data_bars[symbol].close[-1] < sma_100[-1]:
@@ -152,7 +150,7 @@ class Trend:
         start = self.data_bars[symbol].close[-90]
         return last / start <= 1.50
 
-    async def apply_filters(self, now: datetime) -> None:
+    async def apply_filters(self) -> None:
         tlog("Applying filters")
         for _, row in self.portfolio.iterrows():
             self.portfolio.loc[
@@ -177,7 +175,7 @@ class Trend:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # Start the load operations and mark each future with its URL
             futures = {
-                executor.submit(self.apply_filters_symbol, symbol, now): symbol
+                executor.submit(self.apply_filters_symbol, symbol): symbol
                 for symbol in symbols
             }
             for future in concurrent.futures.as_completed(futures):
@@ -214,7 +212,7 @@ class Trend:
 
     async def run(self, now: datetime) -> df:
         await self.load_data(self.symbols, now)
-        await self.calc_momentum(now)
-        await self.apply_filters(now)
+        await self.calc_momentum()
+        await self.apply_filters()
         await self.calc_balance()
         return self.portfolio

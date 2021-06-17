@@ -143,7 +143,7 @@ class BandTrade(Strategy):
                 timeperiod=7,
                 nbdevdn=1,
                 nbdevup=1,
-                matype=MA_Type.EMA,
+                matype=MA_Type.SMA,
             )
 
             # print(self.resampled_close[symbol])  # , self.bband[symbol])
