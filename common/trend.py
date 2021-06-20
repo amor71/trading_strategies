@@ -54,7 +54,6 @@ class Trend:
         except Exception:
             tlog(f"[ERROR] could not load all data points for {symbol}")
             traceback.print_exc()
-            self.data_bars[symbol] = None
 
     async def load_data(self, symbols: List[str], now: datetime) -> None:
         tlog("Data loading started")

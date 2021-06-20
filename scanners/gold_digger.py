@@ -27,7 +27,6 @@ class GoldDigger(Scanner):
         )
 
     async def run(self, back_time: datetime = None) -> List[str]:
-        return ["JNUG"]
         if (
             self.data_loader["GDXJ"].close[back_time]
             > self.data_loader["GDXJ"]
@@ -39,4 +38,5 @@ class GoldDigger(Scanner):
             print("UP!", back_time)
             return ["JNUG"]
         else:
-            return ["JNUG", "JDST"]
+            print("DOWN!", back_time)
+            return ["JDST"]
