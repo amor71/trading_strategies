@@ -48,7 +48,7 @@ class Trend:
     def load_data_for_symbol(self, symbol: str, now: datetime) -> None:
         try:
             self.data_bars[symbol] = self.data_loader[symbol][
-                now.date() - timedelta(days=int(200 * 7 / 5)) : now  # type: ignore
+                now.date() - timedelta(days=int(100 * 7 / 5)) : now  # type: ignore
             ]
 
         except Exception:
@@ -207,7 +207,7 @@ class Trend:
 
         if len(self.portfolio) > 0:
             self.portfolio = self.portfolio.loc[self.portfolio.qty > 0]
-        self.portfolio["accumulative"] = self.portfolio.est.cumsum()
+            self.portfolio["accumulative"] = self.portfolio.est.cumsum()
 
     async def run(self, now: datetime) -> df:
         await self.load_data(self.symbols, now)
