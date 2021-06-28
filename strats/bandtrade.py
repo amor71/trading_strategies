@@ -188,20 +188,20 @@ class BandTrade(Strategy):
                     now - timedelta(days=30) : now  # type:ignore
                 ]
 
-            self.resampled_close[symbol] = serie.resample("1D").last().dropna()
-            self.bband[symbol] = BBANDS(
-                self.resampled_close[symbol],
+            resampled_close = serie.resample("1D").last().dropna()
+            bband = BBANDS(
+                resampled_close,
                 timeperiod=7,
                 nbdevdn=1,
                 nbdevup=1,
                 matype=MA_Type.EMA,
             )
 
-            yesterday_upper_band = self.bband[symbol][0][-2]
+            yesterday_upper_band = bband[0][-2]
             if current_price > yesterday_upper_band:
                 sell_indicators[symbol] = {
-                    "upper_band": self.bband[symbol][0][-2:].tolist(),
-                    "lower_band": self.bband[symbol][2][-2:].tolist(),
+                    "upper_band": bband[0][-2:].tolist(),
+                    "lower_band": bband[2][-2:].tolist(),
                 }
 
                 tlog(
