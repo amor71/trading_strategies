@@ -2,11 +2,8 @@
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-import alpaca_trade_api as tradeapi
-import pandas as pd
 from liualgotrader.common.data_loader import DataLoader
 from liualgotrader.common.tlog import tlog
-from liualgotrader.fincalcs.trends import SeriesTrendType, get_series_trend
 from liualgotrader.scanners.base import Scanner
 
 
@@ -27,16 +24,19 @@ class GoldDigger(Scanner):
         )
 
     async def run(self, back_time: datetime = None) -> List[str]:
-        if (
-            self.data_loader["GDXJ"].close[back_time]
-            > self.data_loader["GDXJ"]
+        sma_50 = (
+            self.data_loader["GDXJ"]
             .close[back_time - timedelta(days=90) : back_time]  # type: ignore
+            .between_time("9:30", "16:00")
+            .resample("1D")
+            .last()
+            .dropna()
             .rolling(50)
-            .sum()[-1]
-            / 50
-        ):
-            print("UP!", back_time)
-            return ["JNUG"]
-        else:
-            print("DOWN!", back_time)
-            return ["JDST"]
+            .mean()
+            .iloc[-1]
+        )
+        return (
+            ["JNUG"]
+            if self.data_loader["GDXJ"].close[back_time] > sma_50
+            else ["JDST"]
+        )
