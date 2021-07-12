@@ -56,9 +56,9 @@ class ShortTrapBusterV2(Strategy):
     async def sell_callback(self, symbol: str, price: float, qty: int) -> None:
         pass
 
-    async def create(self) -> None:
-        await super().create()
+    async def create(self) -> bool:
         tlog(f"strategy {self.name} created")
+        return await super().create()
 
     async def run(
         self,

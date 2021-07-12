@@ -49,9 +49,9 @@ class MomentumLongV6(Strategy):
     async def sell_callback(self, symbol: str, price: float, qty: int) -> None:
         latest_scalp_basis[symbol] = price
 
-    async def create(self) -> None:
-        await super().create()
+    async def create(self) -> bool:
         tlog(f"strategy {self.name} created")
+        return await super().create()
 
     async def should_cool_down(self, symbol: str, now: datetime):
         if (
@@ -94,6 +94,9 @@ class MomentumLongV6(Strategy):
                 ubound = lbound + timedelta(minutes=15)
                 try:
                     self.max15[symbol] = minute_history[lbound:ubound]["high"].max()  # type: ignore
+                    # print(
+                    #    f"max={self.max15[symbol]} {lbound}, {ubound}, {minute_history}"
+                    # )
                 except Exception as e:
                     tlog(
                         f"{symbol}[{now}] failed to aggregate {lbound}:{ubound} {minute_history}"
@@ -101,6 +104,7 @@ class MomentumLongV6(Strategy):
                     return False, {}
 
             if data.close > self.max15[symbol]:
+                # print(f"{symbol} {data.close} {self.max15[symbol]}")
                 close = (
                     minute_history["close"]
                     .dropna()
