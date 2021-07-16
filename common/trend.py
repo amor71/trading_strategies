@@ -185,10 +185,14 @@ class Trend:
         self.portfolio = self.portfolio[
             self.portfolio.symbol.isin(pass_filter)
         ]
-        tlog(f"filters removed {pre_filter_len-len(self.portfolio)}")
+        tlog(
+            f"filters removed {pre_filter_len-len(self.portfolio)} new portfolio length {len(self.portfolio)}"
+        )
 
     async def calc_balance(self) -> None:
-        print("size", self.portfolio_size)
+        tlog(
+            f"portfolio size {self.portfolio_size} w/ length {len(self.portfolio)}"
+        )
 
         sum_vol = self.portfolio.volatility.sum()
         for _, row in self.portfolio.iterrows():
@@ -198,6 +202,8 @@ class Trend:
                 / sum_vol
                 / self.data_bars[row.symbol].close[-1]
             )
+            if qty == 0:
+                qty = 1
             self.portfolio.loc[
                 self.portfolio.symbol == row.symbol, "qty"
             ] = qty
