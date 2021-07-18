@@ -82,13 +82,21 @@ class Trend:
         if slope > 0:
             annualized_slope = (np.power(np.exp(slope), 252) - 1) * 100
             score = annualized_slope * (r_value ** 2)
-
+            volatility = (
+                1
+                - self.data_bars[symbol]
+                .close.pct_change()
+                .rolling(20)
+                .std()
+                .iloc[-1]
+            )
             return dict(
                 {
                     "symbol": symbol,
                     "slope": annualized_slope,
                     "r": r_value,
                     "score": score,
+                    "volatility": volatility,
                 },
             )
         else:
@@ -117,10 +125,8 @@ class Trend:
                 if data:
                     l.append(data)  # , ignore_index=True)
 
-        self.portfolio = (
-            df.from_records(l)
-            .sort_values(by="score", ascending=False)
-            .head(self.stock_count)
+        self.portfolio = df.from_records(l).sort_values(
+            by="score", ascending=False
         )
         tlog(
             f"Trend ranking calculation completed w/ {len(self.portfolio)} trending stocks"
@@ -133,35 +139,26 @@ class Trend:
             return False
 
         if (
-            1.0
-            - self.portfolio.loc[
+            self.portfolio.loc[
                 self.portfolio.symbol == symbol
             ].volatility.values
-            > 0.03
+            < 0.97
         ):
             return False
 
         return True
-        # filter stocks moving > 15% in last 90 days
-        last = self.data_bars[symbol].close[
-            -1
-        ]  # self.data_bars[row.symbol].close[-90:].max()
-        start = self.data_bars[symbol].close[-90]
-        return last / start <= 1.50
+        """
+            # filter stocks moving > 15% in last 90 days
+            last = self.data_bars[symbol].close[
+                -1
+            ]  # self.data_bars[row.symbol].close[-90:].max()
+            start = self.data_bars[symbol].close[-90]
+            return last / start <= 1.50
+        """
 
     async def apply_filters(self) -> None:
         tlog("Applying filters")
-        for _, row in self.portfolio.iterrows():
-            self.portfolio.loc[
-                self.portfolio.symbol == row.symbol, "volatility"
-            ] = (
-                1
-                - self.data_bars[row.symbol]
-                .close.pct_change()
-                .rolling(20)
-                .std()
-                .iloc[-1]
-            )
+
         pre_filter_len = len(self.portfolio)
         symbols = [
             symbol
@@ -187,6 +184,10 @@ class Trend:
         ]
         tlog(
             f"filters removed {pre_filter_len-len(self.portfolio)} new portfolio length {len(self.portfolio)}"
+        )
+        self.portfolio = self.portfolio.head(self.stock_count)
+        tlog(
+            f"taking top {self.stock_count} by score, new portfolio length {len(self.portfolio)}"
         )
 
     async def calc_balance(self) -> None:
