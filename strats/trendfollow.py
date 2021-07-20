@@ -46,6 +46,7 @@ class TrendFollow(Strategy):
         portfolio_id: str,
         ref_run_id: str = None,
         reinvest: bool = False,
+        volatility_threshold: float = 0.03,
     ):
         self.context: str
         self.portfolio_id = portfolio_id
@@ -56,6 +57,7 @@ class TrendFollow(Strategy):
         self.rank_days = rank_days
         self.debug = debug
         self.reinvest = reinvest
+        self.volatility_threshold = volatility_threshold
         if rebalance_rate not in ["daily", "hourly", "weekly"]:
             raise AssertionError(
                 f"rebalance schedule can be either daily/hourly not {rebalance_rate}"
@@ -139,6 +141,7 @@ class TrendFollow(Strategy):
             stock_count=self.stock_count,
             rank_days=self.rank_days,
             debug=self.debug,
+            volatility_threshold=self.volatility_threshold,
         )
         new_profile = await self.trend_logic.run(now)
         tlog(f"{new_profile}")

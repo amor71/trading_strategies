@@ -31,6 +31,7 @@ class Trend:
         portfolio_size: int,
         rank_days: int,
         stock_count: int,
+        volatility_threshold: float,
         debug=False,
     ):
         try:
@@ -40,6 +41,7 @@ class Trend:
             self.data_loader = DataLoader(TimeScale.day)
             self.symbols = symbols
             self.stock_count = stock_count
+            self.volatility_threshold = volatility_threshold
         except Exception:
             raise ValueError(
                 "[ERROR] Miner must receive all valid parameter(s)"
@@ -142,7 +144,7 @@ class Trend:
             self.portfolio.loc[
                 self.portfolio.symbol == symbol
             ].volatility.values
-            < 0.97
+            < 1 - self.volatility_threshold
         ):
             return False
 
