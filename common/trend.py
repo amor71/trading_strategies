@@ -1,3 +1,13 @@
+"""
+Adopted from Andreas F Clenow's "Trend Following" method(s). 
+
+Further readings:
+
+https://www.followingthetrend.com/stocks-on-the-move/ 
+https://www.followingthetrend.com/trading-evolved/
+
+"""
+
 import asyncio
 import concurrent.futures
 import math
@@ -104,6 +114,34 @@ class Trend:
         else:
             return None
 
+    def calc_symbol_negative_momentum(self, symbol: str) -> Optional[Dict]:
+        d = self.data_bars[symbol]
+        _df = df(d)
+        deltas = np.log(_df.close[-self.rank_days :])  # type: ignore
+        slope, _, r_value, _, _ = linregress(np.arange(len(deltas)), deltas)
+        if slope < 0:
+            annualized_slope = (np.power(np.exp(slope), 252) - 1) * 100
+            score = annualized_slope * (r_value ** 2)
+            volatility = (
+                1
+                - self.data_bars[symbol]
+                .close.pct_change()
+                .rolling(20)
+                .std()
+                .iloc[-1]
+            )
+            return dict(
+                {
+                    "symbol": symbol,
+                    "slope": annualized_slope,
+                    "r": r_value,
+                    "score": score,
+                    "volatility": volatility,
+                },
+            )
+        else:
+            return None
+
     async def calc_momentum(self) -> None:
         if not len(self.data_bars):
             raise Exception("calc_momentum() can't run without data. aborting")
@@ -120,6 +158,38 @@ class Trend:
             # Start the load operations and mark each future with its URL
             futures = {
                 executor.submit(self.calc_symbol_momentum, symbol): symbol
+                for symbol in symbols
+            }
+            for future in concurrent.futures.as_completed(futures):
+                data = future.result()
+                if data:
+                    l.append(data)  # , ignore_index=True)
+
+        self.portfolio = df.from_records(l).sort_values(
+            by="score", ascending=False
+        )
+        tlog(
+            f"Trend ranking calculation completed w/ {len(self.portfolio)} trending stocks"
+        )
+
+    async def calc_negative_momentum(self) -> None:
+        if not len(self.data_bars):
+            raise Exception("calc_momentum() can't run without data. aborting")
+
+        tlog("Trend ranking calculation started")
+        symbols = [
+            symbol
+            for symbol in self.data_bars.keys()
+            if not self.data_bars[symbol].empty
+        ]
+
+        l: List[Dict] = []
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Start the load operations and mark each future with its URL
+            futures = {
+                executor.submit(
+                    self.calc_symbol_negative_momentum, symbol
+                ): symbol
                 for symbol in symbols
             }
             for future in concurrent.futures.as_completed(futures):
@@ -158,6 +228,22 @@ class Trend:
             return last / start <= 1.50
         """
 
+    def apply_filters_symbol_for_short(self, symbol: str) -> bool:
+        indicator_calculator = StockDataFrame(self.data_bars[symbol])
+        sma_100 = indicator_calculator["close_100_sma"]
+        if self.data_bars[symbol].close[-1] >= sma_100[-1]:
+            return False
+
+        if (
+            self.portfolio.loc[
+                self.portfolio.symbol == symbol
+            ].volatility.values
+            < 1 - self.volatility_threshold
+        ):
+            return False
+
+        return True
+
     async def apply_filters(self) -> None:
         tlog("Applying filters")
 
@@ -192,6 +278,42 @@ class Trend:
             f"taking top {self.stock_count} by score, new portfolio length {len(self.portfolio)}"
         )
 
+    async def apply_filters_for_short(self) -> None:
+        tlog("Applying filters")
+
+        pre_filter_len = len(self.portfolio)
+        symbols = [
+            symbol
+            for symbol in self.data_bars.keys()
+            if not self.data_bars[symbol].empty
+        ]
+
+        pass_filter: list = []
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Start the load operations and mark each future with its URL
+            futures = {
+                executor.submit(
+                    self.apply_filters_symbol_for_short, symbol
+                ): symbol
+                for symbol in symbols
+            }
+            for future in concurrent.futures.as_completed(futures):
+                filter = future.result()
+                if filter:
+                    pass_filter.append(futures[future])
+
+        self.portfolio = self.portfolio[
+            self.portfolio.symbol.isin(pass_filter)
+        ]
+        tlog(
+            f"filters removed {pre_filter_len-len(self.portfolio)} new portfolio length {len(self.portfolio)}"
+        )
+        self.portfolio = self.portfolio.tail(self.stock_count)
+        tlog(
+            f"taking top {self.stock_count} by score, new portfolio length {len(self.portfolio)}"
+        )
+
     async def calc_balance(self) -> None:
         tlog(
             f"portfolio size {self.portfolio_size} w/ length {len(self.portfolio)}"
@@ -222,5 +344,12 @@ class Trend:
         await self.load_data(self.symbols, now)
         await self.calc_momentum()
         await self.apply_filters()
+        await self.calc_balance()
+        return self.portfolio
+
+    async def run_short(self, now: datetime) -> df:
+        await self.load_data(self.symbols, now)
+        await self.calc_negative_momentum()
+        await self.apply_filters_for_short()
         await self.calc_balance()
         return self.portfolio

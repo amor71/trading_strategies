@@ -45,6 +45,8 @@ class Trend(Miner):
             self.portfolio_size = data["portfolio_size"]
             self.rank_days = int(data["rank_days"])
             self.stock_count = int(data["stock_count"])
+            self.volatility_threshold = float(data["volatility_threshold"])
+            self.short = data.get("short", False)
         except Exception:
             raise ValueError(
                 "[ERROR] Miner must receive all valid parameter(s)"
@@ -128,13 +130,21 @@ class Trend(Miner):
             rank_days=self.rank_days,
             debug=self.debug,
             stock_count=self.stock_count,
+            volatility_threshold=self.volatility_threshold,
         )
         if self.debug:
             tlog(f"symbols: {self.trend_logic.symbols}")
 
-        df = await self.trend_logic.run(
-            nyc.localize(datetime.utcnow()) + timedelta(days=1)
+        df = (
+            await self.trend_logic.run_short(
+                nyc.localize(datetime.utcnow()) + timedelta(days=1)
+            )
+            if self.short
+            else await self.trend_logic.run(
+                nyc.localize(datetime.utcnow()) + timedelta(days=1)
+            )
         )
+
         portfolio_id = await self.save_portfolio()
         await self.display_portfolio(df)
 

@@ -1,3 +1,14 @@
+"""
+Adopted from Andreas F Clenow's "Trend Following" method(s). 
+
+Further readings:
+
+https://www.followingthetrend.com/stocks-on-the-move/ 
+https://www.followingthetrend.com/trading-evolved/
+
+"""
+
+
 import asyncio
 import sys
 import uuid
