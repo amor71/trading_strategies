@@ -59,6 +59,9 @@ class Hft(Strategy):
 
         return True
 
+    async def should_run_all(self):
+        return False
+
     async def run(
         self,
         symbol: str,
@@ -70,5 +73,5 @@ class Hft(Strategy):
         debug: bool = False,
         backtesting: bool = False,
     ) -> Tuple[bool, Dict]:
-
+        print("HFT", symbol, minute_history)
         return False, {}

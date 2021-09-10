@@ -12,7 +12,7 @@ https://www.followingthetrend.com/trading-evolved/
 import asyncio
 import sys
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
 import alpaca_trade_api as tradeapi
@@ -21,7 +21,8 @@ import pandas as pd
 from liualgotrader.analytics import analysis
 from liualgotrader.common import config
 from liualgotrader.common.data_loader import DataLoader
-from liualgotrader.common.market_data import index_data
+from liualgotrader.common.market_data import (m_and_a_data,
+                                              sp500_historical_constituents)
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators, buy_time,
                                                cool_down, last_used_strategy,
@@ -131,6 +132,44 @@ class TrendFollow(Strategy):
         )
         return True
 
+    async def check_adjustment(self, now: date, symbols: List) -> bool:
+        return bool(
+            str(now) in m_and_a_data.index
+            and m_and_a_data.loc[str(now), "from_symbol"]
+        )
+
+    async def apply_adjustment(
+        self, now: date, symbols_position: Dict[str, int]
+    ) -> float:
+        if not await self.check_adjustment(now, list(symbols_position.keys())):
+            return 0.0
+
+        symbol = m_and_a_data.loc[str(now), "from_symbol"]
+        position = symbols_position[symbol]
+
+        if position > 0:
+            new_symbol = m_and_a_data.loc[str(now), "to_symbol"]
+            conversation_rate = m_and_a_data.loc[str(now), "convert_price"]
+            cash_rate = m_and_a_data.loc[str(now), "cash_per_share"]
+
+            cash = position * cash_rate
+            symbols_position[new_symbol] = max(
+                1, int(position * conversation_rate)
+            )
+            symbols_position.pop(symbol)
+            print(
+                symbol,
+                position,
+                new_symbol,
+                cash_rate,
+                cash,
+                symbols_position[new_symbol],
+            )
+
+            return cash
+
+        return 0.0
+
     async def rebalance(
         self,
         data_loader: DataLoader,
@@ -139,6 +178,8 @@ class TrendFollow(Strategy):
     ) -> Dict[str, Dict]:
         await self.set_global_var("last_rebalance", str(now), self.context)
         cash = await Accounts.get_balance(self.account_id)
+
+        cash += await self.apply_adjustment(now.date(), symbols_position)
         invested_amount = sum(
             symbols_position[symbol] * data_loader[symbol].close[now]
             for symbol in symbols_position
@@ -147,7 +188,7 @@ class TrendFollow(Strategy):
             f"starting rebalance for {now} w ${cash} cash + ${invested_amount} equity"
         )
         self.trend_logic = TrendLogic(
-            symbols=(await index_data(self.index)).Symbol.tolist(),
+            symbols=(await sp500_historical_constituents(str(now.date()))),
             portfolio_size=cash + invested_amount,
             stock_count=self.stock_count,
             rank_days=self.rank_days,
@@ -263,6 +304,7 @@ class TrendFollow(Strategy):
                 (trades.symbol == x) & (trades.operation == "sell")
             ].qty.sum()
         )
+        new_df = new_df.loc[new_df.qty != 0]
 
         rc_dict: Dict[str, int] = {}
         for _, row in new_df.iterrows():

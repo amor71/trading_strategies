@@ -32,9 +32,6 @@ from tabulate import tabulate
 
 
 class Trend:
-    portfolio: df = df(columns=["symbol", "slope", "r", "score"])
-    data_bars: Dict[str, df] = {}
-
     def __init__(
         self,
         symbols: List[str],
@@ -56,6 +53,9 @@ class Trend:
             raise ValueError(
                 "[ERROR] Miner must receive all valid parameter(s)"
             )
+
+        self.portfolio: df = df(columns=["symbol", "slope", "r", "score"])
+        self.data_bars: Dict[str, df] = {}
 
     def load_data_for_symbol(self, symbol: str, now: datetime) -> None:
         try:
@@ -171,6 +171,7 @@ class Trend:
         tlog(
             f"Trend ranking calculation completed w/ {len(self.portfolio)} trending stocks"
         )
+        print(self.portfolio)
 
     async def calc_negative_momentum(self) -> None:
         if not len(self.data_bars):
