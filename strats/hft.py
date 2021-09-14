@@ -73,5 +73,5 @@ class Hft(Strategy):
         debug: bool = False,
         backtesting: bool = False,
     ) -> Tuple[bool, Dict]:
-        print("HFT", symbol, minute_history)
+        # print("HFT", symbol, minute_history)
         return False, {}
