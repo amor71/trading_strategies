@@ -7,7 +7,7 @@ google-cloud-logging==2.6.0
 therapist==2.2.0
 liualgotrader==0.3.28
 setuptools==58.3.0
-wheel==0.36.2
+wheel==0.37.0
 twine==3.3.0
 bandit==1.7.0
 scipy==1.6.0
