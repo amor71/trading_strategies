@@ -39,13 +39,15 @@ class Trend:
         rank_days: int,
         stock_count: int,
         volatility_threshold: float,
+        data_loader: DataLoader,
         debug=False,
     ):
         try:
             self.rank_days = rank_days
             self.debug = debug
             self.portfolio_size = portfolio_size
-            self.data_loader = DataLoader(TimeScale.day)
+            tlog(f"data_loader:{data_loader}")
+            self.data_loader = data_loader  # DataLoader(TimeScale.day)
             self.symbols = symbols
             self.stock_count = stock_count
             self.volatility_threshold = volatility_threshold
@@ -60,7 +62,7 @@ class Trend:
     def load_data_for_symbol(self, symbol: str, now: datetime) -> None:
         try:
             self.data_bars[symbol] = self.data_loader[symbol][
-                now.date() - timedelta(days=int(100 * 7 / 5)) : now  # type: ignore
+                now.date() - timedelta(days=int(100 * 7 / 5)) : now.replace(hour=9, minute=30, second=0, microsecond=0)  # type: ignore
             ]
 
         except Exception:
@@ -341,14 +343,14 @@ class Trend:
             self.portfolio = self.portfolio.loc[self.portfolio.qty > 0]
             self.portfolio["accumulative"] = self.portfolio.est.cumsum()
 
-    async def run(self, now: datetime) -> df:
+    async def run(self, now: datetime, carrier=None) -> df:
         await self.load_data(self.symbols, now)
         await self.calc_momentum()
         await self.apply_filters()
         await self.calc_balance()
         return self.portfolio
 
-    async def run_short(self, now: datetime) -> df:
+    async def run_short(self, now: datetime, carrier=None) -> df:
         await self.load_data(self.symbols, now)
         await self.calc_negative_momentum()
         await self.apply_filters_for_short()

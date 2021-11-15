@@ -104,7 +104,7 @@ class MomentumLongV6(Strategy):
                     return False, {}
 
             if data.close > self.max15[symbol]:
-                # print(f"{symbol} {data.close} {self.max15[symbol]}")
+
                 close = (
                     minute_history["close"]
                     .dropna()
@@ -132,8 +132,13 @@ class MomentumLongV6(Strategy):
                 )
                 macd_signal = macds[1].round(3)
                 macd_hist = macds[2].round(3)
+
+                # print(macd)
                 macd_trending = macd[-3] < macd[-2] < macd[-1]
                 macd_above_signal = macd[-1] > macd_signal[-1]
+
+                # print(f"{symbol} {data.close} {self.max15[symbol]} {macd_signal}")
+
                 macd_upper_crossover = (
                     macd[-2] > macd_signal[-2] >= macd_signal[-3] > macd[-3]
                 )
@@ -179,6 +184,7 @@ class MomentumLongV6(Strategy):
                                 )
 
                 if to_buy:
+                    print("to buy!")
                     # check RSI does not indicate overbought
                     rsi = RSI(close, 14)
 
@@ -218,6 +224,7 @@ class MomentumLongV6(Strategy):
                     stop_prices[symbol] = stop_price
 
                     if portfolio_value is None:
+                        print("5555!")
                         if trading_api:
 
                             retry = 3

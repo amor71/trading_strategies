@@ -11,6 +11,7 @@ https://www.followingthetrend.com/trading-evolved/
 
 import asyncio
 import sys
+import time
 import uuid
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
@@ -30,6 +31,7 @@ from liualgotrader.common.trading_data import (buy_indicators, buy_time,
                                                latest_scalp_basis, open_orders,
                                                sell_indicators, stop_prices,
                                                target_prices)
+from liualgotrader.common.types import AssetType
 from liualgotrader.strategies.base import Strategy, StrategyType
 from pandas import DataFrame as df
 from pytz import timezone
@@ -60,7 +62,6 @@ class TrendFollow(Strategy):
         reinvest: bool = False,
         volatility_threshold: float = 0.03,
     ):
-        self.context: str
         self.portfolio_id = portfolio_id
         self.last_rebalance: str
         self.trend_logic: Optional[TrendLogic] = None
@@ -70,12 +71,14 @@ class TrendFollow(Strategy):
         self.debug = debug
         self.reinvest = reinvest
         self.volatility_threshold = volatility_threshold
-        if rebalance_rate not in ["daily", "hourly", "weekly"]:
+        self.asset_type: AssetType
+        self.key: str
+        if rebalance_rate in {"daily", "hourly", "weekly"}:
+            self.rebalance_rate = rebalance_rate
+        else:
             raise AssertionError(
                 f"rebalance schedule can be either daily/hourly not {rebalance_rate}"
             )
-        else:
-            self.rebalance_rate = rebalance_rate
 
         super().__init__(
             name=self.name,
@@ -118,17 +121,24 @@ class TrendFollow(Strategy):
         if not await super().create():
             return False
 
-        tlog(f"strategy {self.name} created")
+        if await Portfolio.is_associated(
+            portfolio_id=self.portfolio_id, batch_id=self.batch_id
+        ):
+            return False
+
         try:
             await Portfolio.associate_batch_id_to_profile(
                 portfolio_id=self.portfolio_id, batch_id=self.batch_id
             )
         except Exception:
-            tlog("Probably already associated...")
             return False
+        portfolio = await Portfolio.load_by_portfolio_id(self.portfolio_id)
+        self.account_id = portfolio.account_id
+        self.portfolio_size = portfolio.portfolio_size
+        self.asset_type = portfolio.asset_type
 
-        self.account_id, self.portfolio_size = await Portfolio.load_details(
-            self.portfolio_id
+        tlog(
+            f"strategy {self.name} created for portfolio_id {self.portfolio_id}"
         )
         return True
 
@@ -175,10 +185,10 @@ class TrendFollow(Strategy):
         data_loader: DataLoader,
         symbols_position: Dict[str, int],
         now: datetime,
+        carrier=None,
     ) -> Dict[str, Dict]:
-        await self.set_global_var("last_rebalance", str(now), self.context)
+        await self.set_global_var(self.key, str(now))
         cash = await Accounts.get_balance(self.account_id)
-
         cash += await self.apply_adjustment(now.date(), symbols_position)
         invested_amount = sum(
             symbols_position[symbol] * data_loader[symbol].close[now]
@@ -194,6 +204,7 @@ class TrendFollow(Strategy):
             rank_days=self.rank_days,
             debug=self.debug,
             volatility_threshold=self.volatility_threshold,
+            data_loader=data_loader,
         )
         new_profile = await self.trend_logic.run(now)
         tlog(f"{new_profile}")
@@ -266,9 +277,7 @@ class TrendFollow(Strategy):
         return actions
 
     async def should_rebalance(self, now: datetime) -> bool:
-        last_rebalance = await self.get_global_var(
-            "last_rebalance", self.context
-        )
+        last_rebalance = await self.get_global_var(self.key)
         if not last_rebalance:  # ignore: type
             return True
 
@@ -322,7 +331,7 @@ class TrendFollow(Strategy):
         debug: bool = False,
         backtesting: bool = False,
     ) -> Dict[str, Dict]:
-        self.context = self.batch_id if backtesting else self.name
+        self.key = f"{self.portfolio_id}-{self.name}-last-rebalance"
         if await self.should_rebalance(now):
             tlog("time for rebalance")
             portfolio_symbols_position = await self.load_symbol_position()
@@ -330,6 +339,9 @@ class TrendFollow(Strategy):
             return await self.rebalance(
                 data_loader, portfolio_symbols_position, now
             )
+
+        else:
+            tlog(f"skip rebalance {now}")
 
         return {}
 

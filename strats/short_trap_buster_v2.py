@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 import alpaca_trade_api as tradeapi
 from liualgotrader.common import config
 from liualgotrader.common.data_loader import DataLoader
+from liualgotrader.common.decorators import trace  # type: ignore
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators,
                                                last_used_strategy,
