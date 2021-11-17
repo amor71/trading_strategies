@@ -35,7 +35,7 @@ class Trend:
     def __init__(
         self,
         symbols: List[str],
-        portfolio_size: int,
+        portfolio_size: float,
         rank_days: int,
         stock_count: int,
         volatility_threshold: float,
@@ -324,14 +324,12 @@ class Trend:
 
         sum_vol = self.portfolio.volatility.sum()
         for _, row in self.portfolio.iterrows():
-            qty = int(
+            qty = float(
                 self.portfolio_size
                 * row.volatility
                 / sum_vol
                 / self.data_bars[row.symbol].close[-1]
             )
-            if qty == 0:
-                qty = 1
             self.portfolio.loc[
                 self.portfolio.symbol == row.symbol, "qty"
             ] = qty

@@ -131,6 +131,7 @@ class Trend(Miner):
             debug=self.debug,
             stock_count=self.stock_count,
             volatility_threshold=self.volatility_threshold,
+            data_loader=DataLoader(),
         )
         if self.debug:
             tlog(f"symbols: {self.trend_logic.symbols}")

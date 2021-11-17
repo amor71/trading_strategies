@@ -90,7 +90,7 @@ class TrendFollow(Strategy):
         )
 
     async def buy_callback(
-        self, symbol: str, price: float, qty: int, now: datetime = None
+        self, symbol: str, price: float, qty: float, now: datetime = None
     ) -> None:
         if self.account_id:
             await Accounts.add_transaction(
@@ -104,7 +104,7 @@ class TrendFollow(Strategy):
             )
 
     async def sell_callback(
-        self, symbol: str, price: float, qty: int, now: datetime = None
+        self, symbol: str, price: float, qty: float, now: datetime = None
     ) -> None:
         if self.account_id:
             await Accounts.add_transaction(
@@ -149,7 +149,7 @@ class TrendFollow(Strategy):
         )
 
     async def apply_adjustment(
-        self, now: date, symbols_position: Dict[str, int]
+        self, now: date, symbols_position: Dict[str, float]
     ) -> float:
         if not await self.check_adjustment(now, list(symbols_position.keys())):
             return 0.0
@@ -163,9 +163,8 @@ class TrendFollow(Strategy):
             cash_rate = m_and_a_data.loc[str(now), "cash_per_share"]
 
             cash = position * cash_rate
-            symbols_position[new_symbol] = max(
-                1, int(position * conversation_rate)
-            )
+            symbols_position[new_symbol] = position * conversation_rate
+
             symbols_position.pop(symbol)
             print(
                 symbol,
@@ -183,7 +182,7 @@ class TrendFollow(Strategy):
     async def rebalance(
         self,
         data_loader: DataLoader,
-        symbols_position: Dict[str, int],
+        symbols_position: Dict[str, float],
         now: datetime,
         carrier=None,
     ) -> Dict[str, Dict]:
@@ -296,7 +295,7 @@ class TrendFollow(Strategy):
 
         return False
 
-    async def load_symbol_position(self) -> Dict[str, int]:
+    async def load_symbol_position(self) -> Dict[str, float]:
         trades = analysis.load_trades_by_portfolio(self.portfolio_id)
 
         if not len(trades):
@@ -315,9 +314,9 @@ class TrendFollow(Strategy):
         )
         new_df = new_df.loc[new_df.qty != 0]
 
-        rc_dict: Dict[str, int] = {}
+        rc_dict: Dict[str, float] = {}
         for _, row in new_df.iterrows():
-            rc_dict[row.symbol] = int(row.qty)
+            rc_dict[row.symbol] = float(row.qty)
 
         return rc_dict
 
