@@ -155,9 +155,15 @@ class TrendFollow(Strategy):
             return 0.0
 
         symbol = m_and_a_data.loc[str(now), "from_symbol"]
+
+        print("apply adjustment", symbol, now)
+        if symbol not in symbols_position:
+            return 0.0
+
         position = symbols_position[symbol]
 
         if position > 0:
+            tlog("apply adjustment")
             new_symbol = m_and_a_data.loc[str(now), "to_symbol"]
             conversation_rate = m_and_a_data.loc[str(now), "convert_price"]
             cash_rate = m_and_a_data.loc[str(now), "cash_per_share"]

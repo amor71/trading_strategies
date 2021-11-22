@@ -47,7 +47,7 @@ class Trend:
             self.debug = debug
             self.portfolio_size = portfolio_size
             tlog(f"data_loader:{data_loader}")
-            self.data_loader = data_loader  # DataLoader(TimeScale.day)
+            self.data_loader = DataLoader(TimeScale.day)
             self.symbols = symbols
             self.stock_count = stock_count
             self.volatility_threshold = volatility_threshold
@@ -76,7 +76,7 @@ class Trend:
                 "load_data() received an empty list of symbols to load. aborting"
             )
         # We can use a with statement to ensure threads are cleaned up promptly
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with concurrent.futures.ThreadPoolExecutor(40) as executor:
             # Start the load operations and mark each future with its URL
             futures = {
                 executor.submit(self.load_data_for_symbol, symbol, now): symbol
@@ -91,6 +91,7 @@ class Trend:
     def calc_symbol_momentum(self, symbol: str) -> Optional[Dict]:
         d = self.data_bars[symbol]
         _df = df(d)
+        print(symbol, _df.close[-self.rank_days :])
         deltas = np.log(_df.close[-self.rank_days :])  # type: ignore
         slope, _, r_value, _, _ = linregress(np.arange(len(deltas)), deltas)
         if slope > 0:
