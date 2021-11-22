@@ -85,9 +85,15 @@ class BandTrade(Strategy):
             tlog("Probably already associated...")
             return False
 
-        self.account_id, self.portfolio_size = await Portfolio.load_details(
-            self.portfolio_id
-        )
+        portfolio = await Portfolio.load_by_portfolio_id(self.portfolio_id)
+
+        if not portfolio:
+            raise AssertionError(
+                f"cloud not load portfolio {self.portfolio_id}"
+            )
+
+        self.account_id = portfolio.account_id
+        self.portfolio_size = portfolio.portfolio_size
 
         return True
 
