@@ -91,7 +91,6 @@ class Trend:
     def calc_symbol_momentum(self, symbol: str) -> Optional[Dict]:
         d = self.data_bars[symbol]
         _df = df(d)
-        print(symbol, _df.close[-self.rank_days :])
         deltas = np.log(_df.close[-self.rank_days :])  # type: ignore
         slope, _, r_value, _, _ = linregress(np.arange(len(deltas)), deltas)
         if slope > 0:
@@ -325,12 +324,16 @@ class Trend:
 
         sum_vol = self.portfolio.volatility.sum()
         for _, row in self.portfolio.iterrows():
-            qty = float(
-                self.portfolio_size
-                * row.volatility
-                / sum_vol
-                / self.data_bars[row.symbol].close[-1]
+            qty = round(
+                float(
+                    self.portfolio_size
+                    * row.volatility
+                    / sum_vol
+                    / self.data_bars[row.symbol].close[-1]
+                ),
+                1,
             )
+
             self.portfolio.loc[
                 self.portfolio.symbol == row.symbol, "qty"
             ] = qty
