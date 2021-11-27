@@ -16,7 +16,6 @@ import uuid
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-import alpaca_trade_api as tradeapi
 import numpy as np
 import pandas as pd
 from liualgotrader.analytics import analysis
@@ -33,6 +32,7 @@ from liualgotrader.common.trading_data import (buy_indicators, buy_time,
                                                target_prices)
 from liualgotrader.common.types import AssetType
 from liualgotrader.strategies.base import Strategy, StrategyType
+from liualgotrader.trading.base import Trader
 from pandas import DataFrame as df
 from pytz import timezone
 
@@ -188,6 +188,7 @@ class TrendFollow(Strategy):
     async def rebalance(
         self,
         data_loader: DataLoader,
+        trader: Trader,
         symbols_position: Dict[str, float],
         now: datetime,
         carrier=None,
@@ -210,6 +211,7 @@ class TrendFollow(Strategy):
             debug=self.debug,
             volatility_threshold=self.volatility_threshold,
             data_loader=data_loader,
+            trader=trader,
         )
         new_profile = await self.trend_logic.run(now)
         tlog(f"{new_profile}")
@@ -332,7 +334,7 @@ class TrendFollow(Strategy):
         data_loader: DataLoader,
         now: datetime,
         portfolio_value: float = None,
-        trading_api: tradeapi = None,
+        trader: Trader = None,
         debug: bool = False,
         backtesting: bool = False,
     ) -> Dict[str, Dict]:
@@ -342,7 +344,7 @@ class TrendFollow(Strategy):
             portfolio_symbols_position = await self.load_symbol_position()
             tlog(f"current positions {portfolio_symbols_position}")
             return await self.rebalance(
-                data_loader, portfolio_symbols_position, now
+                data_loader, trader, portfolio_symbols_position, now
             )
 
         else:

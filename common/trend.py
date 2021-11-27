@@ -16,7 +16,6 @@ import uuid
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-import alpaca_trade_api as tradeapi
 import numpy as np
 from liualgotrader.common import config
 from liualgotrader.common.data_loader import DataLoader  # type: ignore
@@ -25,6 +24,7 @@ from liualgotrader.common.tlog import tlog
 from liualgotrader.common.types import TimeScale
 from liualgotrader.miners.base import Miner
 from liualgotrader.models.portfolio import Portfolio as DBPortfolio
+from liualgotrader.trading.base import Trader
 from pandas import DataFrame as df
 from scipy.stats import linregress
 from stockstats import StockDataFrame
@@ -40,6 +40,7 @@ class Trend:
         stock_count: int,
         volatility_threshold: float,
         data_loader: DataLoader,
+        trader: Trader,
         debug=False,
     ):
         try:
@@ -51,6 +52,7 @@ class Trend:
             self.symbols = symbols
             self.stock_count = stock_count
             self.volatility_threshold = volatility_threshold
+            self.trader = Trader
         except Exception:
             raise ValueError(
                 "[ERROR] Miner must receive all valid parameter(s)"
@@ -333,6 +335,11 @@ class Trend:
                 ),
                 1,
             )
+
+            if not await self.trader.is_fractionable(row.symbol):
+                qty = math.ceil(qty - 1.0)
+                if qty <= 0:
+                    continue
 
             self.portfolio.loc[
                 self.portfolio.symbol == row.symbol, "qty"
