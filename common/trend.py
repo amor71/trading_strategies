@@ -336,6 +336,7 @@ class Trend:
                 1,
             )
 
+            print("row.symbol", row.symbol)
             if not await self.trader.is_fractionable(row.symbol):
                 qty = math.ceil(qty - 1.0)
                 if qty <= 0:
