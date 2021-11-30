@@ -52,7 +52,7 @@ class Trend:
             self.symbols = symbols
             self.stock_count = stock_count
             self.volatility_threshold = volatility_threshold
-            self.trader = Trader
+            self.trader: Trader = trader
         except Exception:
             raise ValueError(
                 "[ERROR] Miner must receive all valid parameter(s)"
