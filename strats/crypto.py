@@ -25,7 +25,7 @@ from pytz import timezone
 from talib import BBANDS, MACD, RSI, MA_Type
 
 
-class BandTrade(Strategy):
+class Crypto(Strategy):
     def __init__(
         self,
         batch_id: str,
@@ -194,7 +194,7 @@ class BandTrade(Strategy):
             yesterday_close = resampled_close[-2]
 
             today_open = self.data_loader[symbol].open[
-                now.replace(hour=9, minute=30, second=0, microsecond=0)
+                now.replace(hour=0, minute=0, second=0, microsecond=0)
             ]
 
             print(
