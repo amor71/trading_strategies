@@ -342,6 +342,10 @@ class TrendFollow(Strategy):
         if await self.should_rebalance(now):
             tlog("time for rebalance")
             portfolio_symbols_position = await self.load_symbol_position()
+            portfolio_symbols_position = {
+                symbol.upper(): portfolio_symbols_position[symbol]
+                for symbol in portfolio_symbols_position.keys()
+            }
             tlog(f"current positions {portfolio_symbols_position}")
             return await self.rebalance(
                 data_loader, trader, portfolio_symbols_position, now
