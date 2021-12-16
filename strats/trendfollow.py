@@ -222,9 +222,10 @@ class TrendFollow(Strategy):
         }
         sell_positions.update(
             {
-                symbol: (
+                symbol: round(
                     symbols_position[symbol]
-                    - new_profile[new_profile.symbol == symbol].qty.values[0]
+                    - new_profile[new_profile.symbol == symbol].qty.values[0],
+                    1,
                 )
                 for symbol in symbols_position
                 if (
@@ -247,9 +248,10 @@ class TrendFollow(Strategy):
         }
         buy_positions.update(
             {
-                symbol: (
+                symbol: round(
                     new_profile[new_profile.symbol == symbol].qty.values[0]
-                    - symbols_position[symbol]
+                    - symbols_position[symbol],
+                    1,
                 )
                 for symbol in symbols_position
                 if symbol in new_profile.symbol.tolist()

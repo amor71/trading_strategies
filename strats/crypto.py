@@ -178,7 +178,20 @@ class Crypto(Strategy):
             if position != 0:
                 continue
 
+            sma_50 = (
+                data_loader[symbol]
+                .close[now - timedelta(days=2) : now]  # type: ignore
+                .dropna()
+                .rolling(50)
+                .mean()
+                .iloc[-1]
+            )
+
             current_price = data_loader[symbol].close[now]
+
+            if current_price < sma_50:
+                continue
+
             tlog(f"{symbol} -> {current_price}")
             resampled_close = self.calc_close(symbol, data_loader, now)
             bband = BBANDS(
