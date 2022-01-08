@@ -11,6 +11,7 @@ https://www.followingthetrend.com/trading-evolved/
 import asyncio
 import concurrent.futures
 import math
+import time
 import traceback
 import uuid
 from datetime import date, datetime, timedelta
@@ -19,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from liualgotrader.common import config
 from liualgotrader.common.data_loader import DataLoader  # type: ignore
-from liualgotrader.common.market_data import index_data
+from liualgotrader.common.market_data import get_trading_day
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.types import TimeScale
 from liualgotrader.miners.base import Miner
@@ -59,48 +60,27 @@ class Trend:
             )
 
         self.portfolio: df = df(columns=["symbol", "slope", "r", "score"])
-        self.data_bars: Dict[str, df] = {}
-
-    def load_data_for_symbol(self, symbol: str, now: datetime) -> None:
-        try:
-            self.data_bars[symbol] = self.data_loader[symbol][
-                now.date() - timedelta(days=int(100 * 7 / 5)) : now.replace(hour=9, minute=30, second=0, microsecond=0)  # type: ignore
-            ]
-
-        except Exception:
-            tlog(f"[ERROR] could not load all data points for {symbol}")
-            traceback.print_exc()
 
     async def load_data(self, symbols: List[str], now: datetime) -> None:
         tlog("Data loading started")
-        if not len(symbols):
-            raise Exception(
-                "load_data() received an empty list of symbols to load. aborting"
-            )
-        # We can use a with statement to ensure threads are cleaned up promptly
-        with concurrent.futures.ThreadPoolExecutor(40) as executor:
-            # Start the load operations and mark each future with its URL
-            futures = {
-                executor.submit(self.load_data_for_symbol, symbol, now): symbol
-                for symbol in symbols
-            }
-            for _ in concurrent.futures.as_completed(futures):
-                pass
+        start = await get_trading_day(now=now.date(), offset=200)
+        self.data_loader.pre_fetch(
+            symbols=symbols, end=now.date(), start=start
+        )
         tlog(
-            f"Data loading completed, loaded data for {len(self.data_bars)} symbols"
+            f"Data loading completed, loaded data for {len(self.data_loader)} symbols"
         )
 
     def calc_symbol_momentum(self, symbol: str) -> Optional[Dict]:
-        d = self.data_bars[symbol]
-        _df = df(d)
-        deltas = np.log(_df.close[-self.rank_days :])  # type: ignore
+        deltas = np.log(self.data_loader[symbol].close[-self.rank_days :])  # type: ignore
+
         slope, _, r_value, _, _ = linregress(np.arange(len(deltas)), deltas)
         if slope > 0:
             annualized_slope = (np.power(np.exp(slope), 252) - 1) * 100
             score = annualized_slope * (r_value ** 2)
             volatility = (
                 1
-                - self.data_bars[symbol]
+                - self.data_loader[symbol]
                 .close.pct_change()
                 .rolling(20)
                 .std()
@@ -119,7 +99,7 @@ class Trend:
             return None
 
     def calc_symbol_negative_momentum(self, symbol: str) -> Optional[Dict]:
-        d = self.data_bars[symbol]
+        d = self.data_loader[symbol]
         _df = df(d)
         deltas = np.log(_df.close[-self.rank_days :])  # type: ignore
         slope, _, r_value, _, _ = linregress(np.arange(len(deltas)), deltas)
@@ -128,7 +108,7 @@ class Trend:
             score = annualized_slope * (r_value ** 2)
             volatility = (
                 1
-                - self.data_bars[symbol]
+                - self.data_loader[symbol]
                 .close.pct_change()
                 .rolling(20)
                 .std()
@@ -147,15 +127,11 @@ class Trend:
             return None
 
     async def calc_momentum(self) -> None:
-        if not len(self.data_bars):
+        if not len(self.data_loader):
             raise Exception("calc_momentum() can't run without data. aborting")
 
         tlog("Trend ranking calculation started")
-        symbols = [
-            symbol
-            for symbol in self.data_bars.keys()
-            if not self.data_bars[symbol].empty
-        ]
+        symbols = self.symbols
 
         l: List[Dict] = []
         with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -178,14 +154,14 @@ class Trend:
         print(self.portfolio)
 
     async def calc_negative_momentum(self) -> None:
-        if not len(self.data_bars):
+        if not len(self.data_loader):
             raise Exception("calc_momentum() can't run without data. aborting")
 
         tlog("Trend ranking calculation started")
         symbols = [
             symbol
-            for symbol in self.data_bars.keys()
-            if not self.data_bars[symbol].empty
+            for symbol in self.data_loader.keys()
+            if not self.data_loader[symbol].empty
         ]
 
         l: List[Dict] = []
@@ -210,9 +186,10 @@ class Trend:
         )
 
     def apply_filters_symbol(self, symbol: str) -> bool:
-        indicator_calculator = StockDataFrame(self.data_bars[symbol])
+        df = self.data_loader[symbol].symbol_data
+        indicator_calculator = StockDataFrame(df)
         sma_100 = indicator_calculator["close_100_sma"]
-        if self.data_bars[symbol].close[-1] < sma_100[-1]:
+        if df.close[-1] < sma_100[-1]:
             return False
 
         if (
@@ -224,19 +201,11 @@ class Trend:
             return False
 
         return True
-        """
-            # filter stocks moving > 15% in last 90 days
-            last = self.data_bars[symbol].close[
-                -1
-            ]  # self.data_bars[row.symbol].close[-90:].max()
-            start = self.data_bars[symbol].close[-90]
-            return last / start <= 1.50
-        """
 
     def apply_filters_symbol_for_short(self, symbol: str) -> bool:
-        indicator_calculator = StockDataFrame(self.data_bars[symbol])
+        indicator_calculator = StockDataFrame(self.data_loader[symbol])
         sma_100 = indicator_calculator["close_100_sma"]
-        if self.data_bars[symbol].close[-1] >= sma_100[-1]:
+        if self.data_loader[symbol].close[-1] >= sma_100[-1]:
             return False
 
         if (
@@ -253,12 +222,7 @@ class Trend:
         tlog("Applying filters")
 
         pre_filter_len = len(self.portfolio)
-        symbols = [
-            symbol
-            for symbol in self.data_bars.keys()
-            if not self.data_bars[symbol].empty
-        ]
-
+        symbols = self.data_loader.keys()
         pass_filter: list = []
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -289,8 +253,8 @@ class Trend:
         pre_filter_len = len(self.portfolio)
         symbols = [
             symbol
-            for symbol in self.data_bars.keys()
-            if not self.data_bars[symbol].empty
+            for symbol in self.data_loader.keys()
+            if not self.data_loader[symbol].empty
         ]
 
         pass_filter: list = []
@@ -323,15 +287,15 @@ class Trend:
         tlog(
             f"portfolio size {self.portfolio_size} w/ length {len(self.portfolio)}"
         )
-
         sum_vol = self.portfolio.volatility.sum()
         for _, row in self.portfolio.iterrows():
+            df = self.data_loader[row.symbol].symbol_data
             qty = round(
                 float(
                     self.portfolio_size
                     * row.volatility
                     / sum_vol
-                    / self.data_bars[row.symbol].close[-1]
+                    / df.close[-1]
                 ),
                 1,
             )
@@ -345,7 +309,7 @@ class Trend:
                 self.portfolio.symbol == row.symbol, "qty"
             ] = qty
             self.portfolio.loc[self.portfolio.symbol == row.symbol, "est"] = (
-                qty * self.data_bars[row.symbol].close[-1]
+                qty * df.close[-1]
             )
 
         if len(self.portfolio) > 0:
