@@ -25,7 +25,7 @@ from pytz import timezone
 from talib import BBANDS, MACD, RSI, MA_Type
 
 
-class BandTrade(Strategy):
+class Crypto(Strategy):
     def __init__(
         self,
         batch_id: str,
@@ -36,6 +36,7 @@ class BandTrade(Strategy):
         self.name = type(self).__name__
         self.portfolio_id = portfolio_id
         self.asset_type: AssetType
+        self.last_buy_price = 0.0
         super().__init__(
             name=type(self).__name__,
             type=StrategyType.SWING,
@@ -55,6 +56,7 @@ class BandTrade(Strategy):
         trade_fee: float = 0.0,
     ) -> None:
         if self.account_id:
+            self.last_buy_price = price
             amount_to_withdraw = price * qty
             if not await Accounts.check_if_enough_balance_to_withdraw(
                 self.account_id, amount_to_withdraw + trade_fee
@@ -110,19 +112,20 @@ class BandTrade(Strategy):
                 "balance post sell",
                 await Accounts.get_balance(self.account_id),
             )
+            self.last_buy_price = 0.0
 
     async def create(self) -> bool:
         if not await super().create():
             return False
 
         tlog(f"strategy {self.name} created")
-        try:
-            await Portfolio.associate_batch_id_to_profile(
-                portfolio_id=self.portfolio_id, batch_id=self.batch_id
-            )
-        except Exception:
-            tlog("Probably already associated...")
-            return False
+        # try:
+        #    await Portfolio.associate_batch_id_to_profile(
+        #        portfolio_id=self.portfolio_id, batch_id=self.batch_id
+        #    )
+        # except Exception:
+        #    tlog("Probably already associated...")
+        #    return False
 
         portfolio = await Portfolio.load_by_portfolio_id(self.portfolio_id)
         self.account_id = portfolio.account_id
@@ -142,28 +145,16 @@ class BandTrade(Strategy):
         return True
 
     def calc_close(self, symbol: str, data_loader: DataLoader, now: datetime):
-        serie = (
-            (
-                self.data_loader[symbol]
-                .close[now - timedelta(days=30) : now]  # type:ignore
-                .between_time("9:30", "16:00")
-            )
-            if self.asset_type == AssetType.US_EQUITIES
-            else self.data_loader[symbol].close[
-                now - timedelta(days=10) : now  # type:ignore
-            ]
-        )
+        data = self.data_loader[symbol].close[
+            now - timedelta(days=2) : now  # type:ignore
+        ]
+        return data.resample("15min").last()
 
-        if not len(serie):
-            serie = self.data_loader[symbol].close[
-                now - timedelta(days=30) : now  # type:ignore
-            ]
-
-        return (
-            serie.resample("1D").last().dropna()
-            if self.asset_type == AssetType.US_EQUITIES
-            else serie.resample("15min").last().dropna()
-        )
+    def calc_open(self, symbol: str, data_loader: DataLoader, now: datetime):
+        data = self.data_loader[symbol].open[
+            now - timedelta(days=2) : now  # type:ignore
+        ]
+        return data.resample("15min").last()
 
     async def handle_buy_side(
         self,
@@ -178,9 +169,36 @@ class BandTrade(Strategy):
             if position != 0:
                 continue
 
+            # sma_50 = (
+            #    data_loader[symbol]
+            #    .close[now - timedelta(days=100) : now]  # type: ignore
+            #    .resample("1D")
+            #    .last()
+            #    .rolling(50)
+            #    .mean()
+            #    .dropna()
+            #    .iloc[-1]
+            # )
+
+            sma_20 = (
+                data_loader[symbol]
+                .close[now - timedelta(days=40) : now]  # type: ignore
+                .resample("1D")
+                .last()
+                .rolling(20)
+                .mean()
+                .dropna()
+                .iloc[-1]
+            )
+
             current_price = data_loader[symbol].close[now]
-            tlog(f"{symbol} -> {current_price}")
+
+            # if current_price < sma_50 and current_price < sma_20:
+            #    continue
+
+            # tlog(f"{symbol} -> {current_price}")
             resampled_close = self.calc_close(symbol, data_loader, now)
+            resampled_open = self.calc_open(symbol, data_loader, now)
             bband = BBANDS(
                 resampled_close,
                 timeperiod=7,
@@ -188,29 +206,16 @@ class BandTrade(Strategy):
                 nbdevup=1,
                 matype=MA_Type.EMA,
             )
-
             yesterday_lower_band = bband[2][-2]
             today_lower_band = bband[2][-1]
             yesterday_close = resampled_close[-2]
-
-            today_open = self.data_loader[symbol].open[
-                now.replace(hour=9, minute=30, second=0, microsecond=0)
-            ]
-
-            print(
-                f"\nyesterday_close < yesterday_lower_band : {yesterday_close < yesterday_lower_band}({yesterday_close} < {yesterday_lower_band})"
-            )
-            print(
-                f"today_open > yesterday_close :{today_open > yesterday_close}({today_open} > {yesterday_close})"
-            )
-            print(
-                f"current_price > today_lower_band :{current_price > today_lower_band}({current_price} > {today_lower_band})"
-            )
+            today_open = resampled_open[-1]
 
             if (
                 yesterday_close < yesterday_lower_band
                 and today_open > yesterday_close
                 and current_price > today_lower_band
+                and current_price > today_open
             ):
                 yesterday_upper_band = bband[0][-2]
                 if current_price > yesterday_upper_band:
@@ -218,6 +223,9 @@ class BandTrade(Strategy):
 
                 buy_indicators[symbol] = {
                     "lower_band": bband[2][-2:].tolist(),
+                    "resampled_close": resampled_close[-2:].tolist(),
+                    "resampled_open": resampled_open[-2:].tolist(),
+                    "current_price": current_price,
                 }
                 shares_to_buy = await self.calc_qty(
                     current_price,
@@ -249,7 +257,36 @@ class BandTrade(Strategy):
             if position == 0:
                 continue
 
+            # sma_20 = (
+            #    data_loader[symbol]
+            #    .close[now - timedelta(days=40) : now]  # type: ignore
+            #    .resample("1D")
+            #    .last()
+            #    .rolling(20)
+            #    .mean()
+            #    .dropna()
+            #    .iloc[-1]
+            # )
             current_price = data_loader[symbol].close[now]
+
+            if False:  # current_price < self.last_buy_price:
+                sell_indicators[symbol] = {
+                    "last_buy_price": self.last_buy_price,
+                    "current_price": current_price,
+                }
+
+                tlog(
+                    f"[{self.name}][{now}] Submitting sell for {position} shares of {symbol} at market"
+                )
+                tlog(f"indicators:{sell_indicators[symbol]}")
+                actions[symbol] = {
+                    "side": "sell",
+                    "qty": str(position),
+                    "type": "limit",
+                    "limit_price": str(current_price),
+                }
+                return actions
+
             resampled_close = self.calc_close(symbol, data_loader, now)
             bband = BBANDS(
                 resampled_close,
@@ -259,16 +296,20 @@ class BandTrade(Strategy):
                 matype=MA_Type.EMA,
             )
 
-            yesterday_upper_band = bband[0][-2]
+            today_upper_band = bband[0][-1]
 
-            print(
-                f"\ncurrent_price > yesterday_upper_band : {current_price > yesterday_upper_band}({current_price} < {yesterday_upper_band})"
-            )
+            # print(
+            #    f"\ncurrent_price > yesterday_upper_band : {current_price > yesterday_upper_band}({current_price} < {yesterday_upper_band})"
+            # )
 
-            if current_price > yesterday_upper_band:
+            if (
+                current_price > today_upper_band
+                and current_price > self.last_buy_price
+            ):
                 sell_indicators[symbol] = {
                     "upper_band": bband[0][-2:].tolist(),
                     "lower_band": bband[2][-2:].tolist(),
+                    "current_price": current_price,
                 }
 
                 tlog(

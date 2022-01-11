@@ -24,4 +24,4 @@ class BTCUSD(Scanner):
         )
 
     async def run(self, back_time: datetime = None) -> List[str]:
-        return ["X:BTCUSD"]
+        return ["BTCUSD"]

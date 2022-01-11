@@ -8,11 +8,10 @@ from multiprocessing import Queue
 from queue import Empty, Full
 from typing import Dict, List, Optional, Tuple
 
-import alpaca_trade_api as tradeapi
 import numpy as np
 from liualgotrader.common import config
 from liualgotrader.common.data_loader import DataLoader  # type: ignore
-from liualgotrader.common.market_data import index_data
+from liualgotrader.common.market_data import sp500_historical_constituents
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.types import QueueMapper, TimeScale
 from liualgotrader.miners.base import Miner
@@ -76,7 +75,7 @@ class Trend(Miner):
         self, portfolio_id: str, df: df, now: datetime
     ) -> None:
         tlog("Executing portfolio buys")
-        trader = trader_factory()()
+        trader = trader_factory()
 
         algo_run = await trader.create_session(self.name)
         await DBPortfolio.associate_batch_id_to_profile(
@@ -124,13 +123,16 @@ class Trend(Miner):
             orders = open_orders
 
     async def run(self) -> bool:
+        trader = trader_factory()
         self.trend_logic = TrendLogic(
-            symbols=(await index_data(self.index)).Symbol.tolist(),
+            symbols=await sp500_historical_constituents(datetime.today()),
             portfolio_size=self.portfolio_size,
             rank_days=self.rank_days,
             debug=self.debug,
             stock_count=self.stock_count,
             volatility_threshold=self.volatility_threshold,
+            data_loader=DataLoader(),
+            trader=trader,
         )
         if self.debug:
             tlog(f"symbols: {self.trend_logic.symbols}")
