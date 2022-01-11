@@ -116,13 +116,13 @@ class BandTrade(Strategy):
             return False
 
         tlog(f"strategy {self.name} created")
-        # try:
-        #    await Portfolio.associate_batch_id_to_profile(
-        #        portfolio_id=self.portfolio_id, batch_id=self.batch_id
-        #    )
-        # except Exception:
-        #    tlog("Probably already associated...")
-        #    return False
+        try:
+            await Portfolio.associate_batch_id_to_profile(
+                portfolio_id=self.portfolio_id, batch_id=self.batch_id
+            )
+        except Exception:
+            tlog("Probably already associated...")
+            return False
 
         portfolio = await Portfolio.load_by_portfolio_id(self.portfolio_id)
         self.account_id = portfolio.account_id
