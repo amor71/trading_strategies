@@ -119,13 +119,13 @@ class Crypto(Strategy):
             return False
 
         tlog(f"strategy {self.name} created")
-        # try:
-        #    await Portfolio.associate_batch_id_to_profile(
-        #        portfolio_id=self.portfolio_id, batch_id=self.batch_id
-        #    )
-        # except Exception:
-        #    tlog("Probably already associated...")
-        #    return False
+        try:
+            await Portfolio.associate_batch_id_to_profile(
+                portfolio_id=self.portfolio_id, batch_id=self.batch_id
+            )
+        except Exception:
+            tlog("Probably already associated...")
+            return False
 
         portfolio = await Portfolio.load_by_portfolio_id(self.portfolio_id)
         self.account_id = portfolio.account_id
@@ -169,62 +169,22 @@ class Crypto(Strategy):
             if position != 0:
                 continue
 
-            # sma_50 = (
-            #    data_loader[symbol]
-            #    .close[now - timedelta(days=100) : now]  # type: ignore
-            #    .resample("1D")
-            #    .last()
-            #    .rolling(50)
-            #    .mean()
-            #    .dropna()
-            #    .iloc[-1]
-            # )
+            current_price = data_loader[symbol].close[now]
 
-            sma_20 = (
+            sma_50 = (
                 data_loader[symbol]
-                .close[now - timedelta(days=40) : now]  # type: ignore
+                .close[now - timedelta(days=60) : now]  # type: ignore
                 .resample("1D")
                 .last()
-                .rolling(20)
+                .rolling(50)
                 .mean()
                 .dropna()
                 .iloc[-1]
             )
 
-            current_price = data_loader[symbol].close[now]
-
-            # if current_price < sma_50 and current_price < sma_20:
-            #    continue
-
-            # tlog(f"{symbol} -> {current_price}")
-            resampled_close = self.calc_close(symbol, data_loader, now)
-            resampled_open = self.calc_open(symbol, data_loader, now)
-            bband = BBANDS(
-                resampled_close,
-                timeperiod=7,
-                nbdevdn=1,
-                nbdevup=1,
-                matype=MA_Type.EMA,
-            )
-            yesterday_lower_band = bband[2][-2]
-            today_lower_band = bband[2][-1]
-            yesterday_close = resampled_close[-2]
-            today_open = resampled_open[-1]
-
-            if (
-                yesterday_close < yesterday_lower_band
-                and today_open > yesterday_close
-                and current_price > today_lower_band
-                and current_price > today_open
-            ):
-                yesterday_upper_band = bband[0][-2]
-                if current_price > yesterday_upper_band:
-                    return {}
-
+            if current_price >= sma_50:
                 buy_indicators[symbol] = {
-                    "lower_band": bband[2][-2:].tolist(),
-                    "resampled_close": resampled_close[-2:].tolist(),
-                    "resampled_open": resampled_open[-2:].tolist(),
+                    "sma_50": sma_50,
                     "current_price": current_price,
                 }
                 shares_to_buy = await self.calc_qty(
@@ -257,21 +217,21 @@ class Crypto(Strategy):
             if position == 0:
                 continue
 
-            # sma_20 = (
-            #    data_loader[symbol]
-            #    .close[now - timedelta(days=40) : now]  # type: ignore
-            #    .resample("1D")
-            #    .last()
-            #    .rolling(20)
-            #    .mean()
-            #    .dropna()
-            #    .iloc[-1]
-            # )
+            sma_50 = (
+                data_loader[symbol]
+                .close[now - timedelta(days=60) : now]  # type: ignore
+                .resample("1D")
+                .last()
+                .rolling(50)
+                .mean()
+                .dropna()
+                .iloc[-1]
+            )
             current_price = data_loader[symbol].close[now]
 
-            if False:  # current_price < self.last_buy_price:
+            if current_price <= sma_50:
                 sell_indicators[symbol] = {
-                    "last_buy_price": self.last_buy_price,
+                    "sma_50": sma_50,
                     "current_price": current_price,
                 }
 
@@ -286,42 +246,6 @@ class Crypto(Strategy):
                     "limit_price": str(current_price),
                 }
                 return actions
-
-            resampled_close = self.calc_close(symbol, data_loader, now)
-            bband = BBANDS(
-                resampled_close,
-                timeperiod=7,
-                nbdevdn=1,
-                nbdevup=1,
-                matype=MA_Type.EMA,
-            )
-
-            today_upper_band = bband[0][-1]
-
-            # print(
-            #    f"\ncurrent_price > yesterday_upper_band : {current_price > yesterday_upper_band}({current_price} < {yesterday_upper_band})"
-            # )
-
-            if (
-                current_price > today_upper_band
-                and current_price > self.last_buy_price
-            ):
-                sell_indicators[symbol] = {
-                    "upper_band": bband[0][-2:].tolist(),
-                    "lower_band": bband[2][-2:].tolist(),
-                    "current_price": current_price,
-                }
-
-                tlog(
-                    f"[{self.name}][{now}] Submitting sell for {position} shares of {symbol} at market"
-                )
-                tlog(f"indicators:{sell_indicators[symbol]}")
-                actions[symbol] = {
-                    "side": "sell",
-                    "qty": str(position),
-                    "type": "limit",
-                    "limit_price": str(current_price),
-                }
 
         return actions
 
