@@ -183,24 +183,37 @@ class Crypto(Strategy):
             )
 
             if current_price >= sma_50:
-                buy_indicators[symbol] = {
-                    "sma_50": sma_50,
-                    "current_price": current_price,
-                }
-                shares_to_buy = await self.calc_qty(
-                    current_price,
-                    trade_fee_precentage,
+
+                macds = MACD(
+                    data_loader[symbol].close[now - timedelta(days=100) : now],  # type: ignore
+                    12,
+                    26,
+                    9,
                 )
-                tlog(
-                    f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {current_price}"
-                )
-                tlog(f"indicators:{buy_indicators[symbol]}")
-                actions[symbol] = {
-                    "side": "buy",
-                    "qty": str(shares_to_buy),
-                    "type": "limit",
-                    "limit_price": str(current_price),
-                }
+                macd = macds[0]
+                macd_signal = macds[1]
+
+                if macd[-1] > macd_signal[-1] and macd[-1] > 0:
+                    buy_indicators[symbol] = {
+                        "sma_50": sma_50,
+                        "macd": macd[-5:].tolist(),
+                        "mac_signal": macd_signal[-5:].tolist(),
+                        "current_price": current_price,
+                    }
+                    shares_to_buy = await self.calc_qty(
+                        current_price,
+                        trade_fee_precentage,
+                    )
+                    tlog(
+                        f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {current_price}"
+                    )
+                    tlog(f"indicators:{buy_indicators[symbol]}")
+                    actions[symbol] = {
+                        "side": "buy",
+                        "qty": str(shares_to_buy),
+                        "type": "limit",
+                        "limit_price": str(current_price),
+                    }
 
         return actions
 
