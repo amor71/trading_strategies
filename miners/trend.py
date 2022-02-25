@@ -46,6 +46,7 @@ class Trend(Miner):
             self.stock_count = int(data["stock_count"])
             self.volatility_threshold = float(data["volatility_threshold"])
             self.short = data.get("short", False)
+            self.top = data.get("top", 40)
         except Exception:
             raise ValueError(
                 "[ERROR] Miner must receive all valid parameter(s)"
@@ -125,7 +126,7 @@ class Trend(Miner):
     async def run(self) -> bool:
         trader = trader_factory()
         self.trend_logic = TrendLogic(
-            symbols=await sp500_historical_constituents(datetime.today()),
+            symbols=await sp500_historical_constituents(str(datetime.today())),
             portfolio_size=self.portfolio_size,
             rank_days=self.rank_days,
             debug=self.debug,
@@ -133,6 +134,7 @@ class Trend(Miner):
             volatility_threshold=self.volatility_threshold,
             data_loader=DataLoader(),
             trader=trader,
+            top=self.top,
         )
         if self.debug:
             tlog(f"symbols: {self.trend_logic.symbols}")

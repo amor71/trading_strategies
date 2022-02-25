@@ -26,10 +26,10 @@ class GoldDigger(Scanner):
     async def run(self, back_time: datetime = None) -> List[str]:
         if not back_time:
             back_time = datetime.now()
+
         sma_50 = (
             self.data_loader["GDXJ"]
             .close[back_time - timedelta(days=90) : back_time]  # type: ignore
-            .between_time("9:30", "16:00")
             .resample("1D")
             .last()
             .dropna()

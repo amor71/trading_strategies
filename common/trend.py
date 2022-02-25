@@ -11,6 +11,7 @@ https://www.followingthetrend.com/trading-evolved/
 import asyncio
 import concurrent.futures
 import math
+import sys
 import time
 import traceback
 import uuid
@@ -42,6 +43,7 @@ class Trend:
         volatility_threshold: float,
         data_loader: DataLoader,
         trader: Trader,
+        top: int,
         debug=False,
     ):
         try:
@@ -54,6 +56,7 @@ class Trend:
             self.stock_count = stock_count
             self.volatility_threshold = volatility_threshold
             self.trader: Trader = trader
+            self.top = top
         except Exception:
             raise ValueError(
                 "[ERROR] Miner must receive all valid parameter(s)"
@@ -63,25 +66,46 @@ class Trend:
 
     async def load_data(self, symbols: List[str], now: datetime) -> None:
         tlog("Data loading started")
+        t0 = time.time()
         start = await get_trading_day(now=now.date(), offset=200)
         self.data_loader.pre_fetch(
             symbols=symbols, end=now.date(), start=start
         )
+        t1 = time.time()
         tlog(
-            f"Data loading completed, loaded data for {len(self.data_loader)} symbols"
+            f"Data loading completed, loaded data for {len(self.data_loader)} symbols in {t1-t0} seconds"
         )
 
-    def calc_symbol_momentum(self, symbol: str) -> Optional[Dict]:
-        deltas = np.log(self.data_loader[symbol].close[-self.rank_days :])  # type: ignore
+    def calc_symbol_momentum(
+        self, symbol: str, now: datetime
+    ) -> Optional[Dict]:
+        np.seterr(all="raise")
+        try:
+            deltas = np.log(self.data_loader[symbol].close[-self.rank_days : now].tolist())  # type: ignore
+        except Exception:
+            tlog(
+                f"np.log-> {symbol}, {now}, {self.data_loader[symbol].close[-self.rank_days : now]}"  # type: ignore
+            )
+            raise
 
-        slope, _, r_value, _, _ = linregress(np.arange(len(deltas)), deltas)
+        try:
+            slope, _, r_value, _, _ = linregress(
+                np.arange(len(deltas)), deltas
+            )
+        except Exception:
+            tlog(
+                f"linregress-> {symbol}, {now}, {self.data_loader[symbol].close[-self.rank_days : now]}"  # type: ignore
+            )
+            raise
+
         if slope > 0:
             annualized_slope = (np.power(np.exp(slope), 252) - 1) * 100
             score = annualized_slope * (r_value ** 2)
             volatility = (
                 1
                 - self.data_loader[symbol]
-                .close.pct_change()
+                .close[-self.rank_days : now]  # type: ignore
+                .pct_change()
                 .rolling(20)
                 .std()
                 .iloc[-1]
@@ -109,7 +133,8 @@ class Trend:
             volatility = (
                 1
                 - self.data_loader[symbol]
-                .close.pct_change()
+                .close[-self.rank_days : now]  # type: ignore
+                .pct_change()
                 .rolling(20)
                 .std()
                 .iloc[-1]
@@ -126,7 +151,7 @@ class Trend:
         else:
             return None
 
-    async def calc_momentum(self) -> None:
+    async def calc_momentum(self, now: datetime) -> None:
         if not len(self.data_loader):
             raise Exception("calc_momentum() can't run without data. aborting")
 
@@ -137,7 +162,7 @@ class Trend:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # Start the load operations and mark each future with its URL
             futures = {
-                executor.submit(self.calc_symbol_momentum, symbol): symbol
+                executor.submit(self.calc_symbol_momentum, symbol, now): symbol
                 for symbol in symbols
             }
             for future in concurrent.futures.as_completed(futures):
@@ -145,8 +170,10 @@ class Trend:
                 if data:
                     l.append(data)  # , ignore_index=True)
 
-        self.portfolio = df.from_records(l).sort_values(
-            by="score", ascending=False
+        self.portfolio = (
+            df.from_records(l)
+            .sort_values(by="score", ascending=False)
+            .head(self.top)
         )
         tlog(
             f"Trend ranking calculation completed w/ {len(self.portfolio)} trending stocks"
@@ -178,15 +205,17 @@ class Trend:
                 if data:
                     l.append(data)  # , ignore_index=True)
 
-        self.portfolio = df.from_records(l).sort_values(
-            by="score", ascending=False
+        self.portfolio = (
+            df.from_records(l)
+            .sort_values(by="score", ascending=False)
+            .head(self.top)
         )
         tlog(
             f"Trend ranking calculation completed w/ {len(self.portfolio)} trending stocks"
         )
 
-    def apply_filters_symbol(self, symbol: str) -> bool:
-        df = self.data_loader[symbol].symbol_data
+    def apply_filters_symbol(self, symbol: str, now: datetime) -> bool:
+        df = self.data_loader[symbol].symbol_data[:now]  # type:ignore
         indicator_calculator = StockDataFrame(df)
         sma_100 = indicator_calculator["close_100_sma"]
         if df.close[-1] < sma_100[-1]:
@@ -218,7 +247,7 @@ class Trend:
 
         return True
 
-    async def apply_filters(self) -> None:
+    async def apply_filters(self, now: datetime) -> None:
         tlog("Applying filters")
 
         pre_filter_len = len(self.portfolio)
@@ -228,7 +257,7 @@ class Trend:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # Start the load operations and mark each future with its URL
             futures = {
-                executor.submit(self.apply_filters_symbol, symbol): symbol
+                executor.submit(self.apply_filters_symbol, symbol, now): symbol
                 for symbol in symbols
             }
             for future in concurrent.futures.as_completed(futures):
@@ -283,13 +312,13 @@ class Trend:
             f"taking top {self.stock_count} by score, new portfolio length {len(self.portfolio)}"
         )
 
-    async def calc_balance(self) -> None:
+    async def calc_balance(self, now: datetime) -> None:
         tlog(
             f"portfolio size {self.portfolio_size} w/ length {len(self.portfolio)}"
         )
         sum_vol = self.portfolio.volatility.sum()
         for _, row in self.portfolio.iterrows():
-            df = self.data_loader[row.symbol].symbol_data
+            df = self.data_loader[row.symbol].symbol_data[:now]  # type: ignore
             qty = round(
                 float(
                     self.portfolio_size
@@ -318,14 +347,14 @@ class Trend:
 
     async def run(self, now: datetime, carrier=None) -> df:
         await self.load_data(self.symbols, now)
-        await self.calc_momentum()
-        await self.apply_filters()
-        await self.calc_balance()
+        await self.calc_momentum(now)
+        await self.apply_filters(now)
+        await self.calc_balance(now)
         return self.portfolio
 
     async def run_short(self, now: datetime, carrier=None) -> df:
         await self.load_data(self.symbols, now)
         await self.calc_negative_momentum()
         await self.apply_filters_for_short()
-        await self.calc_balance()
+        await self.calc_balance(now)
         return self.portfolio

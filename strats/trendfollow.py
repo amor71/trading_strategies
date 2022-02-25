@@ -20,9 +20,8 @@ import numpy as np
 import pandas as pd
 from liualgotrader.analytics import analysis
 from liualgotrader.common import config
-from liualgotrader.common.data_loader import DataLoader
-from liualgotrader.common.market_data import (m_and_a_data,
-                                              sp500_historical_constituents)
+from liualgotrader.common.data_loader import DataLoader, m_and_a_data
+from liualgotrader.common.market_data import sp500_historical_constituents
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators, buy_time,
                                                cool_down, last_used_strategy,
@@ -61,6 +60,7 @@ class TrendFollow(Strategy):
         ref_run_id: str = None,
         reinvest: bool = False,
         volatility_threshold: float = 0.03,
+        top: int = 40,
     ):
         self.portfolio_id = portfolio_id
         self.last_rebalance: str
@@ -71,6 +71,7 @@ class TrendFollow(Strategy):
         self.debug = debug
         self.reinvest = reinvest
         self.volatility_threshold = volatility_threshold
+        self.top = top
         self.asset_type: AssetType
         self.key: str
         if rebalance_rate in {"daily", "hourly", "weekly"}:
@@ -212,6 +213,7 @@ class TrendFollow(Strategy):
             volatility_threshold=self.volatility_threshold,
             data_loader=data_loader,
             trader=trader,
+            top=self.top,
         )
         new_profile = await self.trend_logic.run(now)
         tlog(f"{new_profile}")
