@@ -20,6 +20,7 @@ from liualgotrader.fincalcs.support_resistance import find_stop
 from liualgotrader.models.accounts import Accounts
 from liualgotrader.models.portfolio import Portfolio
 from liualgotrader.strategies.base import Strategy, StrategyType
+from liualgotrader.trading.base import Trader
 from pandas import DataFrame as df
 from pytz import timezone
 from talib import BBANDS, MACD, RSI, MA_Type
@@ -285,7 +286,7 @@ class BandTrade(Strategy):
         return actions
 
     async def should_run_all(self):
-        return False
+        return True
 
     async def run(
         self,
@@ -337,7 +338,7 @@ class BandTrade(Strategy):
         data_loader: DataLoader,
         now: datetime,
         portfolio_value: float = None,
-        trading_api: tradeapi = None,
+        trader: Trader = None,
         debug: bool = False,
         backtesting: bool = False,
         fee_buy_percentage: float = 0.0,
