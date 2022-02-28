@@ -9,5 +9,5 @@ liualgotrader==0.4.13
 setuptools==60.9.3
 wheel==0.37.1
 twine==3.8.0
-bandit==1.7.0
+bandit==1.7.3
 scipy==1.6.0
