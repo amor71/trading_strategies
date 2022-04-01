@@ -65,7 +65,7 @@ class Trend:
         self.portfolio: df = df(columns=["symbol", "slope", "r", "score"])
 
     async def load_data(self, symbols: List[str], now: datetime) -> None:
-        tlog("Data loading started")
+        tlog(f"Data loading started for {now.date()}")
         t0 = time.time()
         start = await get_trading_day(now=now.date(), offset=200)
         self.data_loader.pre_fetch(
@@ -81,6 +81,16 @@ class Trend:
     ) -> Optional[Dict]:
         np.seterr(all="raise")
         try:
+            if (
+                len(self.data_loader[symbol].close[-self.rank_days : now])  # type: ignore
+                < self.rank_days - 10
+            ):
+                tlog("!!!!!!!!!!!!!!!!!!!!!!")
+                tlog(
+                    f"missing data for {symbol} only {len(self.data_loader[symbol].close[-self.rank_days:now])}"  # type: ignore
+                )
+                tlog("!!!!!!!!!!!!!!!!!!!!!!")
+                return None
             deltas = np.log(self.data_loader[symbol].close[-self.rank_days : now].tolist())  # type: ignore
         except Exception:
             tlog(
@@ -153,7 +163,9 @@ class Trend:
 
     async def calc_momentum(self, now: datetime) -> None:
         if not len(self.data_loader):
-            raise Exception("calc_momentum() can't run without data. aborting")
+            raise ValueError(
+                "calc_momentum() can't run without data. aborting"
+            )
 
         tlog("Trend ranking calculation started")
         symbols = self.symbols
@@ -165,10 +177,11 @@ class Trend:
                 executor.submit(self.calc_symbol_momentum, symbol, now): symbol
                 for symbol in symbols
             }
-            for future in concurrent.futures.as_completed(futures):
-                data = future.result()
-                if data:
-                    l.append(data)  # , ignore_index=True)
+            l.extend(
+                data
+                for future in concurrent.futures.as_completed(futures)
+                if (data := future.result())
+            )
 
         self.portfolio = (
             df.from_records(l)
@@ -182,7 +195,9 @@ class Trend:
 
     async def calc_negative_momentum(self) -> None:
         if not len(self.data_loader):
-            raise Exception("calc_momentum() can't run without data. aborting")
+            raise ValueError(
+                "calc_momentum() can't run without data. aborting"
+            )
 
         tlog("Trend ranking calculation started")
         symbols = [
@@ -200,10 +215,11 @@ class Trend:
                 ): symbol
                 for symbol in symbols
             }
-            for future in concurrent.futures.as_completed(futures):
-                data = future.result()
-                if data:
-                    l.append(data)  # , ignore_index=True)
+            l.extend(
+                data
+                for future in concurrent.futures.as_completed(futures)
+                if (data := future.result())
+            )
 
         self.portfolio = (
             df.from_records(l)

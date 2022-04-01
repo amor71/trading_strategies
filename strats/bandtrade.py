@@ -344,7 +344,7 @@ class BandTrade(Strategy):
         fee_buy_percentage: float = 0.0,
         fee_sell_percentage: float = 0.0,
     ) -> Dict[str, Dict]:
-        tlog("run_all here!")
+
         actions = {}
         if await self.is_buy_time(now) and not open_orders:
             actions.update(
