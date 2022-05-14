@@ -85,18 +85,14 @@ class Trend:
                 len(self.data_loader[symbol].close[-self.rank_days : now])  # type: ignore
                 < self.rank_days - 10
             ):
-                tlog("!!!!!!!!!!!!!!!!!!!!!!")
                 tlog(
                     f"missing data for {symbol} only {len(self.data_loader[symbol].close[-self.rank_days:now])}"  # type: ignore
                 )
-                tlog("!!!!!!!!!!!!!!!!!!!!!!")
                 return None
             deltas = np.log(self.data_loader[symbol].close[-self.rank_days : now].tolist())  # type: ignore
-        except Exception:
-            tlog(
-                f"np.log-> {symbol}, {now}, {self.data_loader[symbol].close[-self.rank_days : now]}"  # type: ignore
-            )
-            raise
+        except Exception as e:
+            tlog(f"np.log-> Exception {e} for {symbol}, {now}")  # type: ignore
+            return None
 
         try:
             slope, _, r_value, _, _ = linregress(
@@ -234,7 +230,7 @@ class Trend:
         df = self.data_loader[symbol].symbol_data[:now]  # type:ignore
         indicator_calculator = StockDataFrame(df)
         sma_100 = indicator_calculator["close_100_sma"]
-        if df.close[-1] < sma_100[-1]:
+        if df.empty or df.close[-1] < sma_100[-1]:
             return False
 
         if (

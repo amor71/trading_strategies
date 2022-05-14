@@ -215,6 +215,9 @@ class Crypto(Strategy):
                         "limit_price": str(current_price),
                     }
 
+            else:
+                tlog(f"current price {current_price} > {sma_50}")
+
         return actions
 
     async def handle_sell_side(
