@@ -125,7 +125,6 @@ class Crypto(Strategy):
             )
         except Exception:
             tlog("Probably already associated...")
-            return False
 
         portfolio = await Portfolio.load_by_portfolio_id(self.portfolio_id)
         self.account_id = portfolio.account_id
@@ -170,11 +169,10 @@ class Crypto(Strategy):
                 continue
 
             current_price = data_loader[symbol].close[now]
-
             sma_50 = (
                 data_loader[symbol]
-                .close[now - timedelta(days=60) : now]  # type: ignore
-                .resample("1D")
+                .close[-1500:now]  # type:ignore
+                .resample("15min")
                 .last()
                 .rolling(50)
                 .mean()
@@ -183,6 +181,7 @@ class Crypto(Strategy):
             )
 
             if current_price >= sma_50:
+                tlog(f"Buy: current price {current_price} >= {sma_50}")
 
                 macds = MACD(
                     data_loader[symbol].close[now - timedelta(days=100) : now],  # type: ignore
@@ -204,6 +203,10 @@ class Crypto(Strategy):
                         current_price,
                         trade_fee_precentage,
                     )
+                    if shares_to_buy <= 0:
+                        tlog("not enough cash to buy")
+                        continue
+
                     tlog(
                         f"[{self.name}][{now}] Submitting buy for {shares_to_buy} shares of {symbol} at {current_price}"
                     )
@@ -212,11 +215,11 @@ class Crypto(Strategy):
                         "side": "buy",
                         "qty": str(shares_to_buy),
                         "type": "limit",
-                        "limit_price": str(current_price),
+                        "limit_price": str(round(current_price + 0.1, 1)),
                     }
 
             else:
-                tlog(f"current price {current_price} > {sma_50}")
+                tlog(f"Buy:current price {current_price} < {sma_50}")
 
         return actions
 
@@ -235,8 +238,8 @@ class Crypto(Strategy):
 
             sma_50 = (
                 data_loader[symbol]
-                .close[now - timedelta(days=60) : now]  # type: ignore
-                .resample("1D")
+                .close[-1500:now]  # type: ignore
+                .resample("15min")
                 .last()
                 .rolling(50)
                 .mean()
@@ -246,6 +249,8 @@ class Crypto(Strategy):
             current_price = data_loader[symbol].close[now]
 
             if current_price <= sma_50:
+                tlog(f"Sell: current price {current_price} <= {sma_50}")
+
                 sell_indicators[symbol] = {
                     "sma_50": sma_50,
                     "current_price": current_price,
@@ -262,6 +267,8 @@ class Crypto(Strategy):
                     "limit_price": str(current_price),
                 }
                 return actions
+            else:
+                tlog(f"Sell: current price {current_price} > {sma_50}")
 
         return actions
 
@@ -279,18 +286,16 @@ class Crypto(Strategy):
         debug: bool = False,
         backtesting: bool = False,
     ) -> Tuple[bool, Dict]:
-        fee_buy_percentage: float = 0.0
-        fee_sell_percentage: float = 0.0
         symbols_position = {symbol: position}
-        actions = {}
+        print(f"{now}:current position: {symbols_position}")
+        actions: Dict = {}
         if await self.is_buy_time(now) and not open_orders:
-            actions.update(
-                await self.handle_buy_side(
-                    symbols_position={symbol: position},
-                    data_loader=self.data_loader,
-                    now=now,
-                    trade_fee_precentage=fee_buy_percentage / 100.0,
-                )
+            fee_buy_percentage: float = 0.3
+            actions |= await self.handle_buy_side(  # type:ignore
+                symbols_position={symbol: position},
+                data_loader=self.data_loader,
+                now=now,
+                trade_fee_precentage=fee_buy_percentage / 100.0,
             )
 
         if (
@@ -301,6 +306,7 @@ class Crypto(Strategy):
             )
             and not open_orders
         ):
+            fee_sell_percentage: float = 0.3
             actions.update(
                 await self.handle_sell_side(
                     symbols_position=symbols_position,
@@ -321,8 +327,8 @@ class Crypto(Strategy):
         trading_api: tradeapi = None,
         debug: bool = False,
         backtesting: bool = False,
-        fee_buy_percentage: float = 0.0,
-        fee_sell_percentage: float = 0.0,
+        fee_buy_percentage: float = 0.3,
+        fee_sell_percentage: float = 0.3,
     ) -> Dict[str, Dict]:
         tlog("run_all here!")
         actions = {}

@@ -122,9 +122,7 @@ class TrendFollow(Strategy):
         if not await super().create():
             return False
 
-        if await Portfolio.is_associated(
-            portfolio_id=self.portfolio_id, batch_id=self.batch_id
-        ):
+        if await Portfolio.is_associated(portfolio_id=self.portfolio_id):
             return False
 
         try:
