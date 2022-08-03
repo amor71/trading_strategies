@@ -8,6 +8,7 @@ import alpaca_trade_api as tradeapi
 import numpy as np
 import pandas as pd
 from liualgotrader.common.data_loader import DataLoader
+from liualgotrader.common.decorators import timeit
 from liualgotrader.common.tlog import tlog
 from liualgotrader.common.trading_data import (buy_indicators, buy_time,
                                                cool_down, last_used_strategy,
@@ -169,22 +170,27 @@ class Crypto(Strategy):
                 continue
 
             current_price = data_loader[symbol].close[now]
-            sma_50 = (
-                data_loader[symbol]
-                .close[-1500:now]  # type:ignore
-                .resample("15min")
-                .last()
-                .rolling(50)
-                .mean()
-                .dropna()
-                .iloc[-1]
-            )
-
+            try:
+                sma_50 = (
+                    data_loader[symbol]
+                    .close[now + timedelta(days=-100) : now]  # type:ignore
+                    .rolling(50)
+                    .mean()
+                    .dropna()
+                    .iloc[-1]
+                )
+            except Exception:
+                print(
+                    "ERROR!",
+                    now,
+                    data_loader[symbol]
+                    .close[now + timedelta(days=-100) : now]  # type:ignore
+                    .last(),
+                )
+                raise
             if current_price >= sma_50:
-                tlog(f"Buy: current price {current_price} >= {sma_50}")
-
                 macds = MACD(
-                    data_loader[symbol].close[now - timedelta(days=100) : now],  # type: ignore
+                    data_loader[symbol].close[now + timedelta(days=-100) : now],  # type: ignore
                     12,
                     26,
                     9,
@@ -218,9 +224,6 @@ class Crypto(Strategy):
                         "limit_price": str(round(current_price + 0.1, 1)),
                     }
 
-            else:
-                tlog(f"Buy:current price {current_price} < {sma_50}")
-
         return actions
 
     async def handle_sell_side(
@@ -236,39 +239,43 @@ class Crypto(Strategy):
             if position == 0:
                 continue
 
-            sma_50 = (
-                data_loader[symbol]
-                .close[-1500:now]  # type: ignore
-                .resample("15min")
-                .last()
-                .rolling(50)
-                .mean()
-                .dropna()
-                .iloc[-1]
-            )
+            try:
+                sma_50 = (
+                    data_loader[symbol]
+                    .close[now + timedelta(days=-100) : now]  # type: ignore
+                    .rolling(50)
+                    .mean()
+                    .dropna()
+                    .iloc[-1]
+                )
+            except Exception:
+                print(
+                    "ERROR!",
+                    now,
+                    data_loader[symbol].close[
+                        now + timedelta(days=-100) : now  # type:ignore
+                    ],
+                )
+                raise
+
             current_price = data_loader[symbol].close[now]
 
             if current_price <= sma_50:
-                tlog(f"Sell: current price {current_price} <= {sma_50}")
-
                 sell_indicators[symbol] = {
                     "sma_50": sma_50,
                     "current_price": current_price,
                 }
-
-                tlog(
-                    f"[{self.name}][{now}] Submitting sell for {position} shares of {symbol} at market"
-                )
-                tlog(f"indicators:{sell_indicators[symbol]}")
                 actions[symbol] = {
                     "side": "sell",
                     "qty": str(position),
                     "type": "limit",
                     "limit_price": str(current_price),
                 }
+
+                tlog(
+                    f"[{self.name}][{now}] Submitting sell for {position} shares of {symbol} at {current_price}"
+                )
                 return actions
-            else:
-                tlog(f"Sell: current price {current_price} > {sma_50}")
 
         return actions
 
@@ -287,7 +294,6 @@ class Crypto(Strategy):
         backtesting: bool = False,
     ) -> Tuple[bool, Dict]:
         symbols_position = {symbol: position}
-        print(f"{now}:current position: {symbols_position}")
         actions: Dict = {}
         if await self.is_buy_time(now) and not open_orders:
             fee_buy_percentage: float = 0.3
@@ -331,15 +337,13 @@ class Crypto(Strategy):
         fee_sell_percentage: float = 0.3,
     ) -> Dict[str, Dict]:
         tlog("run_all here!")
-        actions = {}
+        actions: Dict = {}
         if await self.is_buy_time(now) and not open_orders:
-            actions.update(
-                await self.handle_buy_side(
-                    symbols_position=symbols_position,
-                    data_loader=data_loader,
-                    now=now,
-                    trade_fee_precentage=fee_buy_percentage / 100.0,
-                )
+            actions |= await self.handle_buy_side(  # type:ignore
+                symbols_position=symbols_position,
+                data_loader=data_loader,
+                now=now,
+                trade_fee_precentage=fee_buy_percentage / 100.0,
             )
 
         if (
