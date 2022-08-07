@@ -269,7 +269,7 @@ class Crypto(Strategy):
                     "side": "sell",
                     "qty": str(position),
                     "type": "limit",
-                    "limit_price": str(current_price),
+                    "limit_price": str(round(current_price, 1)),
                 }
 
                 tlog(
