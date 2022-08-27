@@ -188,7 +188,7 @@ class Crypto(Strategy):
                     .last(),
                 )
                 raise
-            if current_price >= sma_50:
+            if current_price > sma_50:
                 macds = MACD(
                     data_loader[symbol].close[now + timedelta(days=-100) : now],  # type: ignore
                     12,
@@ -260,7 +260,7 @@ class Crypto(Strategy):
 
             current_price = data_loader[symbol].close[now]
 
-            if current_price <= sma_50:
+            if current_price < sma_50:
                 sell_indicators[symbol] = {
                     "sma_50": sma_50,
                     "current_price": current_price,
@@ -271,7 +271,7 @@ class Crypto(Strategy):
                     "type": "limit",
                     "limit_price": str(round(current_price, 1)),
                 }
-
+                tlog(f"indicators:{sell_indicators[symbol]}")
                 tlog(
                     f"[{self.name}][{now}] Submitting sell for {position} shares of {symbol} at {current_price}"
                 )
