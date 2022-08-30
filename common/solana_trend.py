@@ -7,30 +7,44 @@ https://www.followingthetrend.com/stocks-on-the-move/
 https://www.followingthetrend.com/trading-evolved/
 
 """
-import asyncio
 import concurrent.futures
 import json
 import math
-import sys
 import time
-import traceback
-import uuid
-from datetime import date, datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Dict, List, Optional
 
 import numpy as np
+import pandas as pd
 from liualgotrader.common import config
 from liualgotrader.common.data_loader import DataLoader  # type: ignore
 from liualgotrader.common.market_data import get_trading_day
 from liualgotrader.common.tlog import tlog
-from liualgotrader.common.types import TimeScale
+from liualgotrader.common.types import DataConnectorType, TimeScale
+from liualgotrader.data.data_factory import data_loader_factory
 from liualgotrader.miners.base import Miner
-from liualgotrader.models.portfolio import Portfolio as DBPortfolio
 from liualgotrader.trading.base import Trader
 from pandas import DataFrame as df
 from scipy.stats import linregress
+from solana.keypair import Keypair
+from solana.publickey import PublicKey
+from solana.rpc.async_api import AsyncClient
+from solana.system_program import (CreateAccountWithSeedParams,
+                                   create_account_with_seed)
+from solana.transaction import AccountMeta, Transaction, TransactionInstruction
 from stockstats import StockDataFrame
 from tabulate import tabulate
+
+solana_network: str = "https://api.devnet.solana.com"
+programId: str = "7ueFyhSwCjrJ7GpdwBVQ7aiycyovf2wHXTfEnfF798Vd"
+wallet_filename = "/Users/amichayoren/.config/solana/id.json"
+
+
+def load_wallet(wallet_filename: str) -> Keypair:
+    with open(wallet_filename) as f:
+        data = json.load(f)
+
+        return Keypair.from_secret_key(bytes(data))
 
 
 class Trend:
@@ -64,18 +78,23 @@ class Trend:
 
         self.portfolio: df = df(columns=["symbol", "slope", "r", "score"])
 
-    async def load_data(self, symbols: List[str], now: datetime) -> None:
+    async def load_data(
+        self, symbols: List[str], now: datetime
+    ) -> Dict[str, pd.DataFrame]:
         tlog(f"Data loading started for {now.date()}")
         t0 = time.time()
         start = await get_trading_day(now=now.date(), offset=200)
-        self.data_loader.pre_fetch(
-            symbols=symbols, end=now.date(), start=start
-        )
-        t1 = time.time()
 
-        tlog(
-            f"Data loading completed, loaded data for {len(self.data_loader)} symbols in {t1-t0} seconds"
+        scale: TimeScale = TimeScale.day
+        connector: DataConnectorType = config.data_connector
+        data_api = data_loader_factory(connector)
+        data = data_api.get_symbols_data(
+            symbols=symbols, start=start, end=now.date(), scale=scale
         )
+
+        t1 = time.time()
+        tlog(f"Data loading completed, loaded data in {t1-t0} seconds")
+        return data
 
     def calc_symbol_momentum(
         self, symbol: str, now: datetime
@@ -159,37 +178,70 @@ class Trend:
         else:
             return None
 
-    async def calc_momentum(self, now: datetime) -> None:
-        if not len(self.data_loader):
-            raise ValueError(
-                "calc_momentum() can't run without data. aborting"
-            )
-
+    async def calc_momentum(
+        self, data: Dict[str, pd.DataFrame], now: datetime
+    ) -> None:
         tlog("Trend ranking calculation started")
         symbols = self.symbols
 
-        l: List[Dict] = []
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            # Start the load operations and mark each future with its URL
-            futures = {
-                executor.submit(self.calc_symbol_momentum, symbol, now): symbol
-                for symbol in symbols
-            }
-            l.extend(
-                data
-                for future in concurrent.futures.as_completed(futures)
-                if (data := future.result())
-            )
+        for symbol, df in data.items():
+            async with AsyncClient(solana_network) as client:
+                res = await client.is_connected()
+                print(f"Connectivity to {solana_network}:{res}")
 
-        self.portfolio = (
-            df.from_records(l)
-            .sort_values(by="score", ascending=False)
-            .head(self.top)
-        )
-        tlog(
-            f"Trend ranking calculation completed w/ {len(self.portfolio)} trending stocks"
-        )
-        print(self.portfolio)
+                if not res:
+                    break
+
+                program_publicKey = PublicKey(programId)
+                payer = load_wallet(wallet_filename)
+
+                # greetedPubKey = PublicKey.create_with_seed(
+                #    payer.public_key, "hello5", program_publicKey
+                # )
+                # print(f"greeted public-key : {greetedPubKey}")
+                # cost: int = (await client.get_minimum_balance_for_rent_exemption(4))[
+                #    "result"
+                # ]
+                # print(f"cost in lamports: {cost}")
+
+                # instruction = create_account_with_seed(
+                #    CreateAccountWithSeedParams(
+                #        from_pubkey=payer.public_key,
+                #        new_account_pubkey=greetedPubKey,
+                #        base_pubkey=payer.public_key,
+                #        seed="hello5",
+                #        lamports=cost,
+                #        space=4,
+                #        program_id=program_publicKey,
+                #    )
+                # )
+                # trans = Transaction().add(instruction)
+                # result = await client.send_transaction(trans, payer)
+                # print(result)
+
+                df_bytes = bytes([int(x) for x in df.close.to_list()])
+                print(symbol, len(df_bytes))
+                instruction = TransactionInstruction(
+                    keys=[
+                        AccountMeta(
+                            pubkey=payer.public_key,
+                            is_signer=False,
+                            is_writable=True,
+                        )
+                    ],
+                    program_id=program_publicKey,
+                    data=df_bytes,
+                )
+
+                trans = Transaction().add(instruction)
+                result = await client.send_transaction(trans, payer)
+                print(result)
+                result = await client.confirm_transaction(
+                    result["result"], "confirmed"
+                )
+                print(result)
+
+        raise Exception()
 
     async def calc_negative_momentum(self) -> None:
         if not len(self.data_loader):
@@ -360,8 +412,8 @@ class Trend:
             self.portfolio["accumulative"] = self.portfolio.est.cumsum()
 
     async def run(self, now: datetime, carrier=None) -> df:
-        await self.load_data(self.symbols, now)
-        await self.calc_momentum(now)
+        data = await self.load_data(self.symbols, now)
+        await self.calc_momentum(data, now)
         await self.apply_filters(now)
         await self.calc_balance(now)
         return self.portfolio
