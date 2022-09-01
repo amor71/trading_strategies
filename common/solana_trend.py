@@ -7,9 +7,11 @@ https://www.followingthetrend.com/stocks-on-the-move/
 https://www.followingthetrend.com/trading-evolved/
 
 """
+import base64
 import concurrent.futures
 import json
 import math
+import struct
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -29,6 +31,7 @@ from scipy.stats import linregress
 from solana.keypair import Keypair
 from solana.publickey import PublicKey
 from solana.rpc.async_api import AsyncClient
+from solana.rpc.core import RPCException
 from solana.system_program import (CreateAccountWithSeedParams,
                                    create_account_with_seed)
 from solana.transaction import AccountMeta, Transaction, TransactionInstruction
@@ -36,7 +39,7 @@ from stockstats import StockDataFrame
 from tabulate import tabulate
 
 solana_network: str = "https://api.devnet.solana.com"
-programId: str = "7ueFyhSwCjrJ7GpdwBVQ7aiycyovf2wHXTfEnfF798Vd"
+programId: str = "64ZdvpvU73ig1NVd36xNGqpy5JyAN2kCnVoF7M4wJ53e"
 wallet_filename = "/Users/amichayoren/.config/solana/id.json"
 
 
@@ -178,68 +181,118 @@ class Trend:
         else:
             return None
 
+    async def _set_response_account(
+        self, client: AsyncClient, payer: Keypair, program_publicKey: PublicKey
+    ) -> PublicKey:
+        response_size = 4
+
+        rent_lamports = (
+            await client.get_minimum_balance_for_rent_exemption(response_size)
+        )["result"]
+
+        response_key = PublicKey.create_with_seed(
+            payer.public_key, "hello5", program_publicKey
+        )
+
+        instruction = create_account_with_seed(
+            CreateAccountWithSeedParams(
+                from_pubkey=payer.public_key,
+                new_account_pubkey=response_key,
+                base_pubkey=payer.public_key,
+                seed="hello5",
+                lamports=rent_lamports,
+                space=response_size,
+                program_id=program_publicKey,
+            )
+        )
+        trans = Transaction().add(instruction)
+        try:
+            result = await client.send_transaction(trans, payer)
+        except RPCException:
+            print("account already exists, skipping")
+
+        return response_key
+
+    def _symbol_to_bytes(
+        self, data: Dict[str, pd.DataFrame], symbol: str
+    ) -> bytes:
+        return bytes(int(x) for x in data[symbol].close.to_list())
+
+    async def _parse_response(
+        self, client: AsyncClient, response_key: PublicKey
+    ) -> float:
+        base64_result = (await client.get_account_info(response_key))[
+            "result"
+        ]["value"]["data"]
+        return struct.unpack("f", base64.b64decode(base64_result[0]))[
+            0
+        ]  # type ignore
+
+    async def _get_score(
+        self,
+        client: AsyncClient,
+        program_key: PublicKey,
+        response_key: PublicKey,
+        payer: Keypair,
+        data: Dict[str, pd.DataFrame],
+        symbol: str,
+    ) -> float:
+        payload_to_contract: bytes = self._symbol_to_bytes(data, symbol)
+
+        instruction = TransactionInstruction(
+            keys=[
+                AccountMeta(
+                    pubkey=response_key,
+                    is_signer=False,
+                    is_writable=True,
+                ),
+            ],
+            program_id=program_key,
+            data=payload_to_contract,
+        )
+        recent_blockhash = (await client.get_recent_blockhash())["result"][
+            "value"
+        ]["blockhash"]
+        trans = Transaction(
+            recent_blockhash=recent_blockhash, fee_payer=payer.public_key
+        ).add(instruction)
+
+        trans_result = await client.send_transaction(trans, payer)
+        await client.confirm_transaction(trans_result["result"], "confirmed")
+
+        return await self._parse_response(client, response_key)
+
     async def calc_momentum(
         self, data: Dict[str, pd.DataFrame], now: datetime
     ) -> None:
         tlog("Trend ranking calculation started")
         symbols = self.symbols
 
-        for symbol, df in data.items():
-            async with AsyncClient(solana_network) as client:
-                res = await client.is_connected()
-                print(f"Connectivity to {solana_network}:{res}")
+        async with AsyncClient(solana_network) as client:
+            res = await client.is_connected()
+            print(f"Connectivity to {solana_network}:{res}")
 
-                if not res:
-                    break
+            program_key = PublicKey(programId)
+            payer = load_wallet(wallet_filename)
 
-                program_publicKey = PublicKey(programId)
-                payer = load_wallet(wallet_filename)
+            current_balance = (await client.get_balance(payer.public_key))[
+                "result"
+            ]["value"]
+            tlog(f"SOLANA Wallet Balance:{current_balance} SOL")
 
-                # greetedPubKey = PublicKey.create_with_seed(
-                #    payer.public_key, "hello5", program_publicKey
-                # )
-                # print(f"greeted public-key : {greetedPubKey}")
-                # cost: int = (await client.get_minimum_balance_for_rent_exemption(4))[
-                #    "result"
-                # ]
-                # print(f"cost in lamports: {cost}")
+            response_key = await self._set_response_account(
+                client, payer, program_key
+            )
+            score: float = await self._get_score(
+                client=client,
+                payer=payer,
+                program_key=program_key,
+                response_key=response_key,
+                data=data,
+                symbol="LW",
+            )
 
-                # instruction = create_account_with_seed(
-                #    CreateAccountWithSeedParams(
-                #        from_pubkey=payer.public_key,
-                #        new_account_pubkey=greetedPubKey,
-                #        base_pubkey=payer.public_key,
-                #        seed="hello5",
-                #        lamports=cost,
-                #        space=4,
-                #        program_id=program_publicKey,
-                #    )
-                # )
-                # trans = Transaction().add(instruction)
-                # result = await client.send_transaction(trans, payer)
-                # print(result)
-
-                df_bytes = bytes([int(x) for x in df.close.to_list()])
-                print(symbol, len(df_bytes))
-                instruction = TransactionInstruction(
-                    keys=[
-                        AccountMeta(
-                            pubkey=payer.public_key,
-                            is_signer=False,
-                            is_writable=True,
-                        )
-                    ],
-                    program_id=program_publicKey,
-                    data=df_bytes,
-                )
-
-                trans = Transaction().add(instruction)
-                result = await client.send_transaction(trans, payer)
-                print(result)
-                result = await client.confirm_transaction(
-                    result["result"], "confirmed"
-                )
-                print(result)
+            tlog(f"Score for 'LW': {score}")
 
         raise Exception()
 
