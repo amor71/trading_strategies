@@ -1,0 +1,25 @@
+
+[package]
+authors = ["amor71 <amor71@sgeltd.com>"]
+description = "Volatility in Rust"
+edition = "2018"
+license = "Apache-2.0"
+name = "solana-bpf-vola"
+repository = "https://github.com/amor71/trading_strategies"
+version = "0.0.1"
+
+[features]
+no-entrypoint = []
+
+[dependencies]
+borsh = "0.9.1"
+borsh-derive = "0.9.1"
+solana-program = "=1.11.10"
+
+[dev-dependencies]
+solana-program-test = "=1.11.10"
+solana-sdk = "=1.11.10"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "vola"

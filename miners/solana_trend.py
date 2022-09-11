@@ -1,12 +1,9 @@
 import asyncio
 import concurrent.futures
 import sys
-import traceback
 import uuid
-from datetime import date, datetime, timedelta
-from multiprocessing import Queue
-from queue import Empty, Full
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timedelta
+from typing import Dict, List
 
 import numpy as np
 from liualgotrader.common import config
@@ -23,7 +20,6 @@ from liualgotrader.trading.trader_factory import trader_factory
 from pandas import DataFrame as df
 from pytz import timezone
 from scipy.stats import linregress
-from stockstats import StockDataFrame
 from tabulate import tabulate
 
 sys.path.append("..")
@@ -47,10 +43,11 @@ class SolanaTrend(Miner):
             self.volatility_threshold = float(data["volatility_threshold"])
             self.short = data.get("short", False)
             self.top = data.get("top", 40)
-        except Exception:
+        except Exception as e:
             raise ValueError(
                 "[ERROR] Miner must receive all valid parameter(s)"
-            )
+            ) from e
+
         super().__init__(name="PortfolioBuilder")
 
         if self.debug:

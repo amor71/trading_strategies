@@ -7,14 +7,17 @@ https://www.followingthetrend.com/stocks-on-the-move/
 https://www.followingthetrend.com/trading-evolved/
 
 """
+import asyncio
 import base64
 import concurrent.futures
 import json
 import math
+import random
 import struct
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
+from unittest.util import strclass
 
 import numpy as np
 import pandas as pd
@@ -28,6 +31,7 @@ from liualgotrader.miners.base import Miner
 from liualgotrader.trading.base import Trader
 from pandas import DataFrame as df
 from scipy.stats import linregress
+from solana.exceptions import SolanaRpcException
 from solana.keypair import Keypair
 from solana.publickey import PublicKey
 from solana.rpc.async_api import AsyncClient
@@ -40,6 +44,7 @@ from tabulate import tabulate
 
 solana_network: str = "https://api.devnet.solana.com"
 programId: str = "64ZdvpvU73ig1NVd36xNGqpy5JyAN2kCnVoF7M4wJ53e"
+vola_program_id: str = "3GXYHwCLxy1i7ymZVQcj2DaLeD3x9GUEcAyN9KTX8e8h"
 wallet_filename = "/Users/amichayoren/.config/solana/id.json"
 
 
@@ -86,7 +91,7 @@ class Trend:
     ) -> Dict[str, pd.DataFrame]:
         tlog(f"Data loading started for {now.date()}")
         t0 = time.time()
-        start = await get_trading_day(now=now.date(), offset=200)
+        start = await get_trading_day(now=now.date(), offset=199)
 
         scale: TimeScale = TimeScale.day
         connector: DataConnectorType = config.data_connector
@@ -98,59 +103,6 @@ class Trend:
         t1 = time.time()
         tlog(f"Data loading completed, loaded data in {t1-t0} seconds")
         return data
-
-    def calc_symbol_momentum(
-        self, symbol: str, now: datetime
-    ) -> Optional[Dict]:
-        np.seterr(all="raise")
-        try:
-            if (
-                len(self.data_loader[symbol].close[-self.rank_days : now])  # type: ignore
-                < self.rank_days - 10
-            ):
-                tlog(
-                    f"missing data for {symbol} only {len(self.data_loader[symbol].close[-self.rank_days:now])}"  # type: ignore
-                )
-                return None
-
-            deltas = np.log(self.data_loader[symbol].close[-self.rank_days : now].tolist())  # type: ignore
-        except Exception as e:
-            tlog(f"np.log-> Exception {e} for {symbol}, {now}")  # type: ignore
-            return None
-
-        try:
-            slope, _, r_value, _, _ = linregress(
-                np.arange(len(deltas)), deltas
-            )
-        except Exception:
-            tlog(
-                f"linregress-> {symbol}, {now}, {self.data_loader[symbol].close[-self.rank_days : now]}"  # type: ignore
-            )
-            raise
-
-        if slope > 0:
-            annualized_slope = (np.power(np.exp(slope), 252) - 1) * 100
-            score = annualized_slope * (r_value ** 2)
-            volatility = (
-                1
-                - self.data_loader[symbol]
-                .close[-self.rank_days : now]  # type: ignore
-                .pct_change()
-                .rolling(20)
-                .std()
-                .iloc[-1]
-            )
-            return dict(
-                {
-                    "symbol": symbol,
-                    "slope": annualized_slope,
-                    "r": r_value,
-                    "score": score,
-                    "volatility": volatility,
-                },
-            )
-        else:
-            return None
 
     def calc_symbol_negative_momentum(self, symbol: str) -> Optional[Dict]:
         d = self.data_loader[symbol]
@@ -187,11 +139,13 @@ class Trend:
         response_size = 4
 
         rent_lamports = (
-            await client.get_minimum_balance_for_rent_exemption(response_size)
+            await self.retry(
+                client.get_minimum_balance_for_rent_exemption, response_size
+            )
         )["result"]
 
         response_key = PublicKey.create_with_seed(
-            payer.public_key, "hello5", program_publicKey
+            payer.public_key, "hello", program_publicKey
         )
 
         instruction = create_account_with_seed(
@@ -207,38 +161,49 @@ class Trend:
         )
         trans = Transaction().add(instruction)
         try:
-            result = await client.send_transaction(trans, payer)
+            result = await self.retry(client.send_transaction, trans, payer)
         except RPCException:
-            print("account already exists, skipping")
+            None
 
         return response_key
 
-    def _symbol_to_bytes(
-        self, data: Dict[str, pd.DataFrame], symbol: str
-    ) -> bytes:
-        return bytes(int(x) for x in data[symbol].close.to_list())
+    def _symbol_to_bytes(self, data: pd.DataFrame) -> bytes:
+        raw_data = [int(x) for x in data.close.to_list()]
+
+        prefix = 0
+        if max(raw_data) >= 256:
+            bytes_data: List = []
+
+            for val in raw_data:
+                bytes_data.append(val // 256)
+                bytes_data.append(val % 256)
+
+            raw_data = bytes_data
+            prefix = 1
+
+        return bytes([prefix] + [int(x) for x in raw_data])
 
     async def _parse_response(
         self, client: AsyncClient, response_key: PublicKey
     ) -> float:
-        base64_result = (await client.get_account_info(response_key))[
-            "result"
-        ]["value"]["data"]
+        base64_result = (
+            await self.retry(client.get_account_info, response_key)
+        )["result"]["value"]["data"]
         return struct.unpack("f", base64.b64decode(base64_result[0]))[
             0
         ]  # type ignore
 
-    async def _get_score(
+    async def _get_program_result(
         self,
         client: AsyncClient,
         program_key: PublicKey,
         response_key: PublicKey,
         payer: Keypair,
-        data: Dict[str, pd.DataFrame],
+        data: pd.DataFrame,
         symbol: str,
-    ) -> float:
-        payload_to_contract: bytes = self._symbol_to_bytes(data, symbol)
+    ) -> Optional[float]:
 
+        payload_to_contract: bytes = self._symbol_to_bytes(data)
         instruction = TransactionInstruction(
             keys=[
                 AccountMeta(
@@ -250,51 +215,124 @@ class Trend:
             program_id=program_key,
             data=payload_to_contract,
         )
-        recent_blockhash = (await client.get_recent_blockhash())["result"][
-            "value"
-        ]["blockhash"]
+        recent_blockhash = (await self.retry(client.get_recent_blockhash))[
+            "result"
+        ]["value"]["blockhash"]
         trans = Transaction(
             recent_blockhash=recent_blockhash, fee_payer=payer.public_key
         ).add(instruction)
 
-        trans_result = await client.send_transaction(trans, payer)
-        await client.confirm_transaction(trans_result["result"], "confirmed")
+        try:
+            trans_result = await self.retry(
+                client.send_transaction, trans, payer
+            )
+        except RPCException as e:
+            tlog(
+                f"SOLANA ERROR {e} for {symbol} payload of {len(payload_to_contract)} bytes"
+            )
+            return None
+
+        await self.retry(
+            client.confirm_transaction, trans_result["result"], "confirmed"
+        )
 
         return await self._parse_response(client, response_key)
+
+    async def calc_symbol_momentum(
+        self, data: pd.DataFrame, symbol: str
+    ) -> Optional[Dict]:
+        client = AsyncClient(solana_network)
+        while not await client.is_connected():
+            await asyncio.sleep(10)
+            client = AsyncClient(solana_network)
+
+        program_key = PublicKey(programId)
+        vola_program_key = PublicKey(vola_program_id)
+        payer = load_wallet(wallet_filename)
+
+        response_key = await self._set_response_account(
+            client, payer, program_key
+        )
+        score: Optional[float] = await self._get_program_result(
+            client=client,
+            payer=payer,
+            program_key=program_key,
+            response_key=response_key,
+            data=data,
+            symbol=symbol,
+        )
+
+        if score and score > 0.0:
+            vola_response_key = await self._set_response_account(
+                client, payer, vola_program_key
+            )
+
+            vola: Optional[float] = await self._get_program_result(
+                client=client,
+                payer=payer,
+                program_key=vola_program_key,
+                response_key=vola_response_key,
+                data=data,
+                symbol=symbol,
+            )
+
+            if vola:
+                tlog(f"Score for {symbol}: {score}, vola {1.0 - vola}")
+                return dict(
+                    {
+                        "symbol": symbol,
+                        "score": score,
+                        "volatility": 1.0 - vola,
+                    }
+                )
+
+        return None
+
+    async def retry(self, coro, *args):
+        result = None
+        while not result:
+            try:
+                return await coro(*args)
+            except SolanaRpcException as e:
+                tlog(f"Error {e} for {coro} retrying after short nap")
+                await asyncio.sleep(10 + random.randint(0, 10))
+
+        return result
 
     async def calc_momentum(
         self, data: Dict[str, pd.DataFrame], now: datetime
     ) -> None:
         tlog("Trend ranking calculation started")
-        symbols = self.symbols
+        symbols = list(data.keys())
 
-        async with AsyncClient(solana_network) as client:
-            res = await client.is_connected()
-            print(f"Connectivity to {solana_network}:{res}")
+        chunk_size = 3
+        chunked_symbols = [
+            symbols[i : i + chunk_size]
+            for i in range(0, len(symbols), chunk_size)
+        ]
 
-            program_key = PublicKey(programId)
-            payer = load_wallet(wallet_filename)
+        l: List[Dict] = []
 
-            current_balance = (await client.get_balance(payer.public_key))[
-                "result"
-            ]["value"]
-            tlog(f"SOLANA Wallet Balance:{current_balance} SOL")
-
-            response_key = await self._set_response_account(
-                client, payer, program_key
-            )
-            score: float = await self._get_score(
-                client=client,
-                payer=payer,
-                program_key=program_key,
-                response_key=response_key,
-                data=data,
-                symbol="LW",
+        for chunk in chunked_symbols:
+            l += await asyncio.gather(
+                *[
+                    asyncio.create_task(
+                        self.calc_symbol_momentum(data[symbol], symbol)
+                    )
+                    for symbol in chunk
+                ]
             )
 
-            tlog(f"Score for 'LW': {score}")
-
-        raise Exception()
+        l = [x for x in l if x]
+        self.portfolio = (
+            df.from_records(l)
+            .sort_values(by="score", ascending=False)
+            .head(self.top)
+        )
+        tlog(
+            f"Trend ranking calculation completed w/ {len(self.portfolio)} trending stocks"
+        )
+        print(self.portfolio)
 
     async def calc_negative_momentum(self) -> None:
         if not len(self.data_loader):
@@ -333,22 +371,19 @@ class Trend:
             f"Trend ranking calculation completed w/ {len(self.portfolio)} trending stocks"
         )
 
-    def apply_filters_symbol(self, symbol: str, now: datetime) -> bool:
-        df = self.data_loader[symbol].symbol_data[:now]  # type:ignore
+    def apply_filters_symbol(
+        self, df: pd.DataFrame, symbol: str, now: datetime
+    ) -> bool:
+        return True
         indicator_calculator = StockDataFrame(df)
         sma_100 = indicator_calculator["close_100_sma"]
         if df.empty or df.close[-1] < sma_100[-1]:
             return False
 
-        if (
-            self.portfolio.loc[
-                self.portfolio.symbol == symbol
-            ].volatility.values
-            < 1 - self.volatility_threshold
-        ):
-            return False
-
-        return True
+        return (
+            self.portfolio.loc[self.portfolio.symbol == symbol].volatility
+            >= 1 - self.volatility_threshold
+        )
 
     def apply_filters_symbol_for_short(self, symbol: str) -> bool:
         indicator_calculator = StockDataFrame(self.data_loader[symbol])
@@ -357,30 +392,36 @@ class Trend:
             return False
 
         if (
-            self.portfolio.loc[
-                self.portfolio.symbol == symbol
-            ].volatility.values
+            self.portfolio.loc[self.portfolio.symbol == symbol].volatility
             < 1 - self.volatility_threshold
         ):
+            tlog(
+                f"filter {self.portfolio.loc[self.portfolio.symbol == symbol].volatility} < {1 - self.volatility_threshold}"
+            )
             return False
 
         return True
 
-    async def apply_filters(self, now: datetime) -> None:
+    async def apply_filters(
+        self, data: Dict[str, pd.DataFrame], now: datetime
+    ) -> None:
         tlog("Applying filters")
 
         pre_filter_len = len(self.portfolio)
-        symbols = self.data_loader.keys()
+        symbols = data.keys()
         pass_filter: list = []
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # Start the load operations and mark each future with its URL
             futures = {
-                executor.submit(self.apply_filters_symbol, symbol, now): symbol
+                executor.submit(
+                    self.apply_filters_symbol, data[symbol], symbol, now
+                ): symbol
                 for symbol in symbols
             }
             for future in concurrent.futures.as_completed(futures):
                 filter = future.result()
+                print(futures[future], filter)
                 if filter:
                     pass_filter.append(futures[future])
 
@@ -431,13 +472,15 @@ class Trend:
             f"taking top {self.stock_count} by score, new portfolio length {len(self.portfolio)}"
         )
 
-    async def calc_balance(self, now: datetime) -> None:
+    async def calc_balance(
+        self, data: Dict[str, pd.DataFrame], now: datetime
+    ) -> None:
         tlog(
             f"portfolio size {self.portfolio_size} w/ length {len(self.portfolio)}"
         )
         sum_vol = self.portfolio.volatility.sum()
         for _, row in self.portfolio.iterrows():
-            df = self.data_loader[row.symbol].symbol_data[:now]  # type: ignore
+            df = data[row.symbol].symbol_data[:now]  # type: ignore
             qty = round(
                 float(
                     self.portfolio_size
@@ -467,13 +510,6 @@ class Trend:
     async def run(self, now: datetime, carrier=None) -> df:
         data = await self.load_data(self.symbols, now)
         await self.calc_momentum(data, now)
-        await self.apply_filters(now)
-        await self.calc_balance(now)
-        return self.portfolio
-
-    async def run_short(self, now: datetime, carrier=None) -> df:
-        await self.load_data(self.symbols, now)
-        await self.calc_negative_momentum()
-        await self.apply_filters_for_short()
-        await self.calc_balance(now)
+        await self.apply_filters(data, now)
+        await self.calc_balance(data, now)
         return self.portfolio
