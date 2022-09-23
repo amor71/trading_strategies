@@ -7,9 +7,9 @@ https://www.followingthetrend.com/stocks-on-the-move/
 https://www.followingthetrend.com/trading-evolved/
 
 """
-
 import asyncio
 import concurrent.futures
+import json
 import math
 import sys
 import time
@@ -72,6 +72,7 @@ class Trend:
             symbols=symbols, end=now.date(), start=start
         )
         t1 = time.time()
+
         tlog(
             f"Data loading completed, loaded data for {len(self.data_loader)} symbols in {t1-t0} seconds"
         )
@@ -89,6 +90,7 @@ class Trend:
                     f"missing data for {symbol} only {len(self.data_loader[symbol].close[-self.rank_days:now])}"  # type: ignore
                 )
                 return None
+
             deltas = np.log(self.data_loader[symbol].close[-self.rank_days : now].tolist())  # type: ignore
         except Exception as e:
             tlog(f"np.log-> Exception {e} for {symbol}, {now}")  # type: ignore
