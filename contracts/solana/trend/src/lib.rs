@@ -14,8 +14,6 @@ pub struct AssetScore {
     /// asset score
     pub slope: f32,
     pub intercept: f32,
-    pub r_2: f32,
-
 }
 
 // Declare and export the program's entrypoint
@@ -90,7 +88,7 @@ pub fn process_instruction(
     let real_sum_xy : f32 = sum_xy as f32 + (sum_x_frac_y as f32) / 100.;
     let slope : f32 = ((x as f32) * real_sum_xy - (sum_x as f32) * real_sum_y) / (denom as f32);
     let intercept : f32 = (real_sum_y * (sum_x_2 as f32) - (sum_x as f32)* real_sum_xy) / (denom as f32);
-    let mean_data : f32 = real_sum_y / (x as f32);
+    //let mean_data : f32 = real_sum_y / (x as f32);
 
     //let mut tss : f32 = 0.;
     //let mut rss : f32 = 0.;
@@ -102,11 +100,11 @@ pub fn process_instruction(
     //    tss = tss + (val - mean_data) * (val - mean_data);
     //}
 
-    let r_2 : f32 = 1.0 ; // if tss != 0. {(tss - rss) / tss} else {1.};
+    //let r_2 : f32 = 1.0 ; // if tss != 0. {(tss - rss) / tss} else {1.};
     let mut result = AssetScore::try_from_slice(&account.data.borrow())?;
     result.slope = slope;
     result.intercept = intercept;
-    result.r_2 = r_2;
+    //result.r_2 = r_2;
     result.serialize(&mut &mut account.data.borrow_mut()[..])?;
 
     Ok(())
