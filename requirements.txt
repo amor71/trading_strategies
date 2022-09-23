@@ -13,4 +13,4 @@ scipy
 solana
 pytest_asyncio
 pytest
-
+finrashortdata
