@@ -7,7 +7,7 @@ google-cloud-logging==3.2.5
 therapist==2.2.0
 setuptools==65.5.0
 wheel==0.37.1
-twine==3.3.0
+twine==4.0.1
 bandit==1.7.0
 scipy
 solana
