@@ -9,7 +9,7 @@ setuptools==65.5.1
 wheel==0.38.4
 twine==4.0.1
 bandit==1.7.4
-scipy
+scipy==1.9.3
 solana
 pytest_asyncio
 pytest
