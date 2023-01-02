@@ -10,7 +10,7 @@ wheel==0.38.4
 twine==4.0.2
 bandit==1.7.4
 scipy==1.9.3
-solana
+solana==0.28.1
 pytest_asyncio
 pytest
 finrashortdata
