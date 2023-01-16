@@ -8,7 +8,7 @@ therapist==2.2.0
 setuptools==66.0.0
 wheel==0.38.4
 twine==4.0.2
-bandit==1.7.0
+bandit==1.7.4
 scipy
 solana
 pytest_asyncio
