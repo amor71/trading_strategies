@@ -1,29 +1,20 @@
-import asyncio
-import sys
-import uuid
 from datetime import datetime, time, timedelta
-from typing import Dict, List, Tuple
+from typing import Dict, Optional, Tuple
 
-import alpaca_trade_api as tradeapi
 import numpy as np
 import pandas as pd
 from liualgotrader.common.data_loader import DataLoader
 from liualgotrader.common.tlog import tlog
-from liualgotrader.common.trading_data import (buy_indicators, buy_time,
-                                               cool_down, last_used_strategy,
-                                               latest_cost_basis,
-                                               latest_scalp_basis, open_orders,
-                                               sell_indicators, stop_prices,
-                                               target_prices)
+from liualgotrader.common.trading_data import (buy_indicators, open_orders,
+                                               sell_indicators)
 from liualgotrader.common.types import AssetType
 from liualgotrader.fincalcs.support_resistance import find_stop
 from liualgotrader.models.accounts import Accounts
 from liualgotrader.models.portfolio import Portfolio
 from liualgotrader.strategies.base import Strategy, StrategyType
 from liualgotrader.trading.base import Trader
-from pandas import DataFrame as df
 from pytz import timezone
-from talib import BBANDS, MACD, RSI, MA_Type
+from talib import BBANDS, MA_Type
 
 
 class BandTrade(Strategy):
@@ -32,7 +23,7 @@ class BandTrade(Strategy):
         batch_id: str,
         data_loader: DataLoader,
         portfolio_id: str,
-        ref_run_id: int = None,
+        ref_run_id: Optional[int] = None,
     ):
         self.name = type(self).__name__
         self.portfolio_id = portfolio_id
@@ -52,7 +43,7 @@ class BandTrade(Strategy):
         symbol: str,
         price: float,
         qty: float,
-        now: datetime = None,
+        now: Optional[datetime] = None,
         trade_fee: float = 0.0,
     ) -> None:
         if self.account_id:
@@ -86,7 +77,7 @@ class BandTrade(Strategy):
         symbol: str,
         price: float,
         qty: float,
-        now: datetime = None,
+        now: Optional[datetime] = None,
         trade_fee: float = 0.0,
     ) -> None:
         if self.account_id:
@@ -254,10 +245,10 @@ class BandTrade(Strategy):
             resampled_close = self.calc_close(symbol, data_loader, now)
             bband = BBANDS(
                 resampled_close,
-                timeperiod=7,
+                timeperiod=20,
                 nbdevdn=1,
                 nbdevup=1,
-                matype=MA_Type.EMA,
+                matype=MA_Type.SMA,
             )
 
             yesterday_upper_band = bband[0][-2]
@@ -295,22 +286,19 @@ class BandTrade(Strategy):
         position: float,
         now: datetime,
         minute_history: pd.DataFrame,
-        portfolio_value: float = None,
+        portfolio_value: Optional[float] = None,
         debug: bool = False,
         backtesting: bool = False,
     ) -> Tuple[bool, Dict]:
-        fee_buy_percentage: float = 0.0
-        fee_sell_percentage: float = 0.0
         symbols_position = {symbol: position}
-        actions = {}
+        actions: Dict = {}
         if await self.is_buy_time(now) and not open_orders:
-            actions.update(
-                await self.handle_buy_side(
-                    symbols_position={symbol: position},
-                    data_loader=self.data_loader,
-                    now=now,
-                    trade_fee_precentage=fee_buy_percentage / 100.0,
-                )
+            fee_buy_percentage: float = 0.0
+            actions |= await self.handle_buy_side(
+                symbols_position={symbol: position},
+                data_loader=self.data_loader,
+                now=now,
+                trade_fee_precentage=fee_buy_percentage / 100.0,
             )
 
         if (
@@ -321,6 +309,7 @@ class BandTrade(Strategy):
             )
             and not open_orders
         ):
+            fee_sell_percentage: float = 0.0
             actions.update(
                 await self.handle_sell_side(
                     symbols_position=symbols_position,
@@ -337,23 +326,21 @@ class BandTrade(Strategy):
         symbols_position: Dict[str, float],
         data_loader: DataLoader,
         now: datetime,
-        portfolio_value: float = None,
-        trader: Trader = None,
+        portfolio_value: Optional[float] = None,
+        trader: Optional[Trader] = None,
         debug: bool = False,
         backtesting: bool = False,
         fee_buy_percentage: float = 0.0,
         fee_sell_percentage: float = 0.0,
     ) -> Dict[str, Dict]:
 
-        actions = {}
+        actions: Dict = {}
         if await self.is_buy_time(now) and not open_orders:
-            actions.update(
-                await self.handle_buy_side(
-                    symbols_position=symbols_position,
-                    data_loader=data_loader,
-                    now=now,
-                    trade_fee_precentage=fee_buy_percentage / 100.0,
-                )
+            actions |= await self.handle_buy_side(
+                symbols_position=symbols_position,
+                data_loader=data_loader,
+                now=now,
+                trade_fee_precentage=fee_buy_percentage / 100.0,
             )
 
         if (

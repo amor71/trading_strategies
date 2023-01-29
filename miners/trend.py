@@ -38,6 +38,7 @@ class Trend(Miner):
         data: Dict,
         debug=False,
     ):
+        print("here...")
         try:
             self.index = data["index"]
             self.debug = debug

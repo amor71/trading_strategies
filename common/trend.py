@@ -65,12 +65,12 @@ class Trend:
         self.portfolio: df = df(columns=["symbol", "slope", "r", "score"])
 
     async def load_data(self, symbols: List[str], now: datetime) -> None:
-        tlog(f"Data loading started for {now.date()}")
+        tlog(f"Data loading started for {now}")
         t0 = time.time()
-        start = await get_trading_day(now=now.date(), offset=200)
-        self.data_loader.pre_fetch(
-            symbols=symbols, end=now.date(), start=start
-        )
+        start = await get_trading_day(now=now, offset=200)
+
+        print(f"{start}:{now}")
+        self.data_loader.pre_fetch(symbols=symbols, end=now, start=start)
         t1 = time.time()
 
         tlog(
