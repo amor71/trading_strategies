@@ -5,7 +5,7 @@ Cython==0.29.35
 alpaca-trade-api==3.0.2
 google-cloud-logging==3.5.0
 therapist==2.2.0
-setuptools==53.0.0
+setuptools==68.0.0
 wheel==0.36.2
 twine==3.3.0
 bandit==1.7.0
