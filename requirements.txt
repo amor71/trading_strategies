@@ -6,7 +6,7 @@ alpaca-trade-api==3.0.2
 google-cloud-logging==3.6.0
 therapist==2.2.0
 setuptools==68.1.2
-wheel==0.36.2
+wheel==0.41.2
 twine==3.3.0
 bandit==1.7.0
 scipy
