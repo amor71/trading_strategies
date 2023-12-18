@@ -27,10 +27,6 @@ class Load(Scanner):
         self.data_factory = data_loader_factory()
 
     async def run(self, back_time: datetime = None) -> List[str]:
-        symbols = []
         assets = self.data_factory.get_symbols()
-        for asset in assets:
-            if asset.tradable:
-                symbols.append(asset.symbol)
-
+        symbols = [asset.symbol for asset in assets if asset.tradable]
         return symbols[:600]

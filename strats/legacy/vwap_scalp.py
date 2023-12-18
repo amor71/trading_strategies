@@ -107,8 +107,4 @@ class VWAPScalp(Strategy):
 
         elif position != 0.0:
             tlog("we need to sell!")
-            # scale-out
-            # sell if not picking up.
-            pass
-
         return False, {}

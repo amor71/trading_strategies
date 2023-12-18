@@ -1,7 +1,7 @@
 def pre_calculated(self, df):
     ## Init
-    df["ema_short"] = ta.EMA({"close": df.close}, timeperiod=int(16))
-    df["ema_long"] = ta.EMA({"close": df.close}, timeperiod=int(50))
+    df["ema_short"] = ta.EMA({"close": df.close}, timeperiod=16)
+    df["ema_long"] = ta.EMA({"close": df.close}, timeperiod=50)
     df["atr"] = ta.ATR({"low": df.low, "high": df.high, "close": df.close})
     # Find a series of 10 candles where the 20ema is at least 2 ATR below the 50ema. We'll call this Span A.
     span_a_length = int(10 * self.span_length_mult)

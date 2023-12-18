@@ -67,13 +67,7 @@ class Gold(Strategy):
         return False
 
     async def is_buy_time(self, now: datetime):
-        return (
-            True
-            if time(hour=14, minute=30)
-            >= now.time()
-            >= time(hour=9, minute=30)
-            else False
-        )
+        return time(hour=14, minute=30) >= now.time() >= time(hour=9, minute=30)
 
     async def is_sell_time(self, now: datetime):
         return True

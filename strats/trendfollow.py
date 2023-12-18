@@ -324,10 +324,9 @@ class TrendFollow(Strategy):
         )
         new_df = new_df.loc[new_df.qty != 0]
 
-        rc_dict: Dict[str, float] = {}
-        for _, row in new_df.iterrows():
-            rc_dict[row.symbol] = float(row.qty)
-
+        rc_dict: Dict[str, float] = {
+            row.symbol: float(row.qty) for _, row in new_df.iterrows()
+        }
         return rc_dict
 
     async def run_all(

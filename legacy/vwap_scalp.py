@@ -151,7 +151,7 @@ class VWAPScalp(Strategy):
                 and data.close > prev_minute.close
                 and data.close > data.average
             ):
-                if not symbol in down_cross:
+                if symbol not in down_cross:
                     tlog(
                         f"[{now}] {symbol} did not find download crossing in the past 15 min"
                     )
@@ -238,9 +238,6 @@ class VWAPScalp(Strategy):
                 to_sell = True
                 reason = "below VWAP"
                 to_sell_market = True
-            elif data.close >= target_prices[symbol]:
-                to_sell = True
-                reason = "vwap scalp"
             elif data.close >= target_prices[symbol]:
                 to_sell = True
                 reason = "vwap scalp"

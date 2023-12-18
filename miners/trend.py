@@ -127,7 +127,7 @@ class Trend(Miner):
     async def run(self) -> bool:
         trader = trader_factory()
         self.trend_logic = TrendLogic(
-            symbols=await sp500_historical_constituents(str(datetime.today())),
+            symbols=await sp500_historical_constituents(str(datetime.now())),
             portfolio_size=self.portfolio_size,
             rank_days=self.rank_days,
             debug=self.debug,

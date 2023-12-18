@@ -122,8 +122,7 @@ class Trend(Miner):
                 for symbol in symbols
             }
             for future in concurrent.futures.as_completed(futures):
-                data = future.result()
-                if data:
+                if data := future.result():
                     l.append(data)  # , ignore_index=True)
 
         self.portfolio = df.from_records(l).sort_values(
@@ -164,8 +163,7 @@ class Trend(Miner):
                 for symbol in symbols
             }
             for future in concurrent.futures.as_completed(futures):
-                filter = future.result()
-                if filter:
+                if filter := future.result():
                     pass_filter.append(futures[future])
 
         self.portfolio = self.portfolio[
