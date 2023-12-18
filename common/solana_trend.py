@@ -375,15 +375,6 @@ class Trend:
         self, df: pd.DataFrame, symbol: str, now: datetime
     ) -> bool:
         return True
-        indicator_calculator = StockDataFrame(df)
-        sma_100 = indicator_calculator["close_100_sma"]
-        if df.empty or df.close[-1] < sma_100[-1]:
-            return False
-
-        return (
-            self.portfolio.loc[self.portfolio.symbol == symbol].volatility
-            >= 1 - self.volatility_threshold
-        )
 
     def apply_filters_symbol_for_short(self, symbol: str) -> bool:
         indicator_calculator = StockDataFrame(self.data_loader[symbol])
@@ -457,8 +448,7 @@ class Trend:
                 for symbol in symbols
             }
             for future in concurrent.futures.as_completed(futures):
-                filter = future.result()
-                if filter:
+                if filter := future.result():
                     pass_filter.append(futures[future])
 
         self.portfolio = self.portfolio[

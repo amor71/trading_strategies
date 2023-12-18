@@ -41,17 +41,13 @@ class GapDown(Scanner):
     async def _wait_time(self) -> None:
         if not config.bypass_market_schedule and config.market_open:
             nyc = timezone("America/New_York")
-            since_market_open = (
-                datetime.today().astimezone(nyc) - config.market_open
-            )
+            since_market_open = datetime.now().astimezone(nyc) - config.market_open
 
             if since_market_open.seconds // 60 < 10:
-                tlog(f"{self.name} market open, wait {10} minutes")
+                tlog(f"{self.name} market open, wait 10 minutes")
                 while since_market_open.seconds // 60 < 10:
                     await asyncio.sleep(1)
-                    since_market_open = (
-                        datetime.today().astimezone(nyc) - config.market_open
-                    )
+                    since_market_open = datetime.now().astimezone(nyc) - config.market_open
 
         tlog(f"Scanner {self.name} ready to run")
 
@@ -106,21 +102,17 @@ class GapDown(Scanner):
                     date.today() - timedelta(days=30),
                     "day",
                 )
-                std = {}
-                for symbol in symbols:
-                    if symbol in _daiy_data:
-                        std[symbol] = statistics.pstdev(
-                            _daiy_data[symbol]["low"]
-                        )
-
-                unsorted = [
+                std = {
+                    symbol: statistics.pstdev(_daiy_data[symbol]["low"])
+                    for symbol in symbols
+                    if symbol in _daiy_data
+                }
+                if unsorted := [
                     x
                     for x in unsorted
                     if x.ticker in symbols
                     and x.day["o"] < (x.prevDay["l"] - std[x.ticker])
-                ]
-
-                if len(unsorted) > 0:
+                ]:
                     ticker_by_volume = sorted(
                         unsorted,
                         key=lambda ticker: float(ticker.day["v"]),
@@ -138,7 +130,6 @@ class GapDown(Scanner):
 
         except KeyboardInterrupt:
             tlog("KeyboardInterrupt")
-            pass
         except Exception as e:
             print(e)
 

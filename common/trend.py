@@ -235,15 +235,10 @@ class Trend:
         if df.empty or df.close[-1] < sma_100[-1]:
             return False
 
-        if (
-            self.portfolio.loc[
-                self.portfolio.symbol == symbol
-            ].volatility.values
-            < 1 - self.volatility_threshold
-        ):
-            return False
-
-        return True
+        return (
+            self.portfolio.loc[self.portfolio.symbol == symbol].volatility.values
+            >= 1 - self.volatility_threshold
+        )
 
     def apply_filters_symbol_for_short(self, symbol: str) -> bool:
         indicator_calculator = StockDataFrame(self.data_loader[symbol])
@@ -251,15 +246,10 @@ class Trend:
         if self.data_loader[symbol].close[-1] >= sma_100[-1]:
             return False
 
-        if (
-            self.portfolio.loc[
-                self.portfolio.symbol == symbol
-            ].volatility.values
-            < 1 - self.volatility_threshold
-        ):
-            return False
-
-        return True
+        return (
+            self.portfolio.loc[self.portfolio.symbol == symbol].volatility.values
+            >= 1 - self.volatility_threshold
+        )
 
     async def apply_filters(self, now: datetime) -> None:
         tlog("Applying filters")
@@ -275,8 +265,7 @@ class Trend:
                 for symbol in symbols
             }
             for future in concurrent.futures.as_completed(futures):
-                filter = future.result()
-                if filter:
+                if filter := future.result():
                     pass_filter.append(futures[future])
 
         self.portfolio = self.portfolio[
@@ -311,8 +300,7 @@ class Trend:
                 for symbol in symbols
             }
             for future in concurrent.futures.as_completed(futures):
-                filter = future.result()
-                if filter:
+                if filter := future.result():
                     pass_filter.append(futures[future])
 
         self.portfolio = self.portfolio[

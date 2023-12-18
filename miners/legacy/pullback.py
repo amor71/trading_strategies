@@ -184,9 +184,9 @@ class Pullback(Miner):
             self.portfolio.loc[self.portfolio.symbol == row.symbol, "est"] = (
                 qty * self.data_bars[row.symbol].close[-1]
             )
-            self.portfolio.loc[
-                self.portfolio.symbol == row.symbol, "opt"
-            ] = bool(self.data_bars[row.symbol].close[-1] < lower_band[-1])
+            self.portfolio.loc[self.portfolio.symbol == row.symbol, "opt"] = (
+                self.data_bars[row.symbol].close[-1] < lower_band[-1]
+            )
         self.portfolio = self.portfolio.loc[
             (self.portfolio.profit > 0)
             & (self.portfolio.opt == True)
