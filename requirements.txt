@@ -11,6 +11,6 @@ twine==5.1.1
 bandit==1.7.9
 scipy==1.14.0
 solana==0.34.2
-pytest_asyncio
+pytest_asyncio==0.23.7
 pytest
 finrashortdata
