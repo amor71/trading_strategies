@@ -13,4 +13,4 @@ scipy==1.14.1
 solana==0.34.3
 pytest_asyncio==0.24.0
 pytest==8.3.3
-finrashortdata
+finrashortdata==0.1.1
