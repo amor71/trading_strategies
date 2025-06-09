@@ -12,5 +12,5 @@ bandit==1.8.3
 scipy==1.15.3
 solana==0.36.7
 pytest_asyncio==1.0.0
-pytest
+pytest==8.4.0
 finrashortdata
