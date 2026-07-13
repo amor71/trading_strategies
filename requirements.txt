@@ -4,7 +4,7 @@ flake8==3.8.4
 Cython==0.29.21
 alpaca-trade-api
 google-cloud-logging==2.2.0
-therapist==2.1.0
+therapist==2.2.0
 setuptools==53.0.0
 wheel==0.36.2
 twine==3.3.0
