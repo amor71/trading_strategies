@@ -12,5 +12,5 @@ bandit==1.7.0
 scipy
 solana
 pytest_asyncio
-pytest
+pytest==9.1.1
 finrashortdata
