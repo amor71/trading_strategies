@@ -1,6 +1,6 @@
 black==26.5.1
 pylint==4.0.6
-flake8==3.8.4
+flake8==7.3.0
 Cython==0.29.21
 alpaca-trade-api
 google-cloud-logging==2.2.0
