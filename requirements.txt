@@ -3,7 +3,7 @@ pylint==4.0.7
 flake8==7.3.0
 Cython==3.3.0
 alpaca-trade-api==3.2.0
-google-cloud-logging==2.2.0
+google-cloud-logging==3.16.2
 therapist==2.1.0
 setuptools==53.0.0
 wheel==0.36.2
